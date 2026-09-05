@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error",
+    "perf": "warn",
+    "suspicious": "warn"
+  },
+  "ignorePatterns": ["**/dist/**", "**/coverage/**", "**/playwright-report/**"],
+  "options": {
+    "denyWarnings": true,
+    "reportUnusedDisableDirectives": "error",
+    "respectEslintDisableDirectives": false,
+    "typeAware": true
+  },
+  "rules": {
+    "no-console": "off",
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": "error",
+    "unicorn/no-array-reverse": "off",
+    "unicorn/no-array-sort": "off"
+  }
+}

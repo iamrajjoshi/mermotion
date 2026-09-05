@@ -1,0 +1,6 @@
+sequenceDiagram
+  participant Worker
+  participant API
+  Worker->>API: GET /status
+  API-->>Worker: 200 OK
+  Worker->>API: GET /status

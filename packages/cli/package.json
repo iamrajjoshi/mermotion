@@ -1,0 +1,21 @@
+{
+  "name": "@mermotion/cli",
+  "version": "0.0.0",
+  "private": true,
+  "bin": {
+    "mermotion": "./dist/index.js"
+  },
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@mermotion/engine": "workspace:*",
+    "commander": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "name": "@mermotion/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite --host 127.0.0.1",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@fontsource-variable/ibm-plex-sans": "catalog:",
+    "@fontsource-variable/jetbrains-mono": "catalog:",
+    "@mermotion/engine": "workspace:*",
+    "@ungap/structured-clone": "1.4.0",
+    "cmdk": "catalog:",
+    "idb": "catalog:",
+    "lucide-react": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "react-resizable-panels": "catalog:"
+  },
+  "devDependencies": {
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  }
+}

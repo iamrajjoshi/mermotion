@@ -1,0 +1,4 @@
+motionDiagram-v1
+  reveal messages every 600ms
+  pulse participant API for 400ms
+  second-check: pulse message Worker->>API: "GET /status" occurrence 2 for 300ms

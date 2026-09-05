@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "emitDeclarationOnly": false,
+    "noEmit": false,
+    "outDir": "dist",
+    "tsBuildInfoFile": "../../node_modules/.cache/cli-build.tsbuildinfo"
+  },
+  "exclude": ["src/**/*.test.ts"]
+}

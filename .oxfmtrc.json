@@ -1,0 +1,19 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "ignorePatterns": [
+    "**/dist/**",
+    "**/coverage/**",
+    "**/node_modules/**",
+    "**/playwright-report/**",
+    "**/test-results/**",
+    "fixtures/**/*.mmd",
+    "fixtures/**/*.motion"
+  ],
+  "indentWidth": 2,
+  "lineWidth": 100,
+  "proseWrap": "preserve",
+  "semi": true,
+  "singleQuote": true,
+  "sortPackageJson": true,
+  "trailingComma": "all"
+}
