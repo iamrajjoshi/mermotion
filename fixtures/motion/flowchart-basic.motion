@@ -1,0 +1,9 @@
+motionDiagram-v1
+  %% One marker keeps its identity for the entire route.
+  defaults duration 400ms easing ease-out color #ff5470
+  marker request as "Request"
+
+  highlight A
+  move request along A --> M --> X over 1.8s
+  pulse X for 500ms
+  trace A --> M --> X over 1.2s

@@ -1,0 +1,33 @@
+{
+  "name": "mermotion",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm --filter @mermotion/engine build && pnpm --filter @mermotion/cli build && pnpm --filter @mermotion/web build",
+    "dev": "pnpm --filter @mermotion/engine build && pnpm --filter @mermotion/web dev",
+    "format": "oxfmt .",
+    "format:check": "oxfmt --check .",
+    "lint": "oxlint .",
+    "mermotion": "pnpm --filter @mermotion/engine build && pnpm --filter @mermotion/cli build && node packages/cli/dist/index.js",
+    "policy:check": "node scripts/check-boundaries.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "typecheck": "pnpm --filter @mermotion/engine build && pnpm --recursive --if-present run typecheck",
+    "verify": "pnpm format:check && pnpm lint && pnpm policy:check && pnpm typecheck && pnpm test && pnpm build"
+  },
+  "devDependencies": {
+    "@playwright/test": "catalog:",
+    "@types/node": "catalog:",
+    "oxfmt": "catalog:",
+    "oxlint": "catalog:",
+    "oxlint-tsgolint": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  },
+  "engines": {
+    "node": ">=24.15.0"
+  },
+  "packageManager": "pnpm@11.25.0"
+}
