@@ -24,8 +24,9 @@ motionDiagram-v1
 ```
 
 The first non-comment line is the version header. Canonical source has one `defaults` line,
-statements on separate lines, two-space indentation, bare Mermaid IDs, and six-digit hexadecimal
-colors. The marker declaration above creates a dot; M1 has no other marker shape.
+statements on separate lines, two-space indentation, and six-digit hexadecimal colors. Mermaid IDs
+stay bare when they are unambiguous; IDs that contain spaces or collide with syntax words are quoted.
+The marker declaration above creates a dot; M1 has no other marker shape.
 
 Unprefixed cues start after earlier cues finish. `with` starts a cue alongside the preceding one.
 Use `at 2.4s` only when a cue needs an exact timeline position. Durations accept `ms` or `s`: use
@@ -59,11 +60,14 @@ guess.
 Repeated sequence messages need the full semantic selector:
 
 ```motion
+pulse message Worker->>API: "GET /status" occurrence 1 for 300ms
 pulse message Worker->>API: "GET /status" occurrence 2 for 300ms
 ```
 
 It includes the sender, Mermaid arrow, receiver, exact quoted message text, and one-based occurrence.
-Leave `occurrence` off when the message is unique.
+You may omit `occurrence` only when that signature matches one message. When it repeats, every cue
+uses an explicit occurrence—including `occurrence 1`—so inserting another identical message cannot
+silently rebind existing motion.
 
 ## Markers and paths
 
@@ -102,7 +106,8 @@ palette, so changing the Play button does not change exported source.
 Website authoring controls and agents emit only the canonical M1 profile. They derive targets from
 Mermaid source and the semantic target inventory; they never copy Mermaid-generated SVG IDs into a
 sidecar. They also never emit YAML, JSON, CSS selectors, keyframes, or invented keywords. A generated
-cue stays readable as motion source, and the `.mmd` file remains unchanged.
+cue stays readable as motion source, quotes an ID only when the parser requires it, and leaves the
+`.mmd` file unchanged.
 
 ## Compatibility and advanced forms
 
@@ -112,25 +117,34 @@ includes cue labels paired with `after`, `wait`, visibility and story verbs (`un
 easing or color, `color inherit`, semicolons, alternate Mermaid arrows, short or alpha-bearing
 hexadecimal colors, and legacy explicit marker-shape clauses.
 
-These forms are compatibility or advanced syntax, not canonical M1 output. Do not put them in starter
-files, primary examples, website insertions, or agent-authored source. The repeated-message selector
+These forms are compatibility or advanced syntax, not canonical M1 output. Do not put them in
+canonical examples, website insertions, or agent-authored source. The repeated-message selector
 described above is the exception: its full form is required when sequence messages repeat.
 
 ## CLI
 
 ```sh
-pnpm mermotion validate checkout.mmd
-pnpm mermotion motion check checkout.mmd --json
-pnpm mermotion motion fmt checkout.motion --check
-pnpm mermotion motion compile checkout.mmd --json
-pnpm mermotion sample checkout.mmd --time 1.25s --json
+mermotion validate checkout.mmd
+mermotion motion fmt checkout.motion --check
+mermotion render checkout.mmd --at 1.25s -o checkout-frame.svg
+```
+
+Use `pnpm exec mermotion` when Mermotion is a project dependency, or
+`pnpm dlx mermotion@0.1.0` for a one-off command. Inside the Mermotion source checkout,
+`pnpm mermotion` rebuilds the engine and CLI before running. After `pnpm build`, contributors can
+invoke the built entry point directly when stdout must contain one JSON envelope:
+
+```sh
+node packages/cli/dist/index.js motion check checkout.mmd --json
+node packages/cli/dist/index.js motion compile checkout.mmd --json
+node packages/cli/dist/index.js sample checkout.mmd --time 1.25s --json
+node packages/cli/dist/index.js render checkout.mmd --check --json
 ```
 
 The CLI looks for a same-name `.motion` sibling. Validation and formatting never rewrite `.mmd`.
-Target binding is verified in the rendered web path. The first CLI delivery validates Mermaid,
-motion syntax, timing, cue labels, and marker references without launching Chromium; target-bearing
-`validate`, `motion compile`, and `sample` responses include `targetResolution: "inferred"` and the
-warning `CLI_TARGETS_NOT_VERIFIED`.
+`render` is the authoritative target-binding check because it discovers Mermaid's actual SVG
+inventory before compilation; use a `.png` output name for PNG. `validate`, `motion compile`, and
+`sample` stay browser-free and do not claim that authored IDs exist in the rendered diagram.
 
 See [`design/motion-behavior.md`](design/motion-behavior.md) for the geometry, timing, and performance
 rules behind these semantics.

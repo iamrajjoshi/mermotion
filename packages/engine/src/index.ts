@@ -4,10 +4,10 @@ export {
   diagnosticForUnexpectedCompilerFailure,
   emptyTimeline,
   noMotionDocument,
-  sampleMotion,
   sampleTimeline,
 } from './compiler.js';
 export {
+  formatMotionIdentifier,
   formatMotion,
   MOTION_DEFAULTS,
   parseMotion,
@@ -23,6 +23,14 @@ export {
   validateMermaid,
 } from './mermaid-adapter.js';
 export {
+  effectPaintOverflowPixels,
+  settleMotionViewport,
+  type MotionViewportBounds,
+  type MotionViewportDimensions,
+  type SettledMotionViewport,
+  type SettleMotionViewportOptions,
+} from './motion-viewport.js';
+export {
   applyFrameToSvg,
   clearMotionFromSvg,
   discoverTargets,
@@ -30,6 +38,7 @@ export {
   resolveTargetFromElement,
   TARGET_ATTRIBUTE,
 } from './targets.js';
+export { neutralizeMermaidImageSources, neutralizeSvgNetworkResources } from './svg-security.js';
 export { MERMAID_VERSION } from './version.js';
 export { validateMotion } from './validation.js';
 export type * from './types.js';

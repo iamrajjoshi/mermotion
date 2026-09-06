@@ -169,6 +169,67 @@ motionDiagram-v1;
 `);
   });
 
+  it('distinguishes quoted IDs from selector keywords and preserves them when formatting', () => {
+    const source = `motionDiagram-v1
+  marker "123" as "Numeric"
+  move "123" along "diagram" --> "two words" over 1s
+  highlight "diagram"
+  pulse "message"
+  highlight "for"
+  trace "node" --> "-xray" over 400ms
+  highlight edges "for", "color"
+  pulse message "message"->>"participant": "Ready"
+`;
+    const parsed = parseMotion(source);
+    const selectors = parsed.document?.statements.flatMap((statement) =>
+      statement.kind === 'effect' ? [statement.selector] : [],
+    );
+
+    expect(parsed.diagnostics).toEqual([]);
+    expect(selectors).toEqual([
+      { id: 'diagram', kind: 'id' },
+      { id: 'message', kind: 'id' },
+      { id: 'for', kind: 'id' },
+      { kind: 'route', nodes: ['node', '-xray'] },
+      { ids: ['for', 'color'], kind: 'edges' },
+      {
+        arrow: '->>',
+        from: 'message',
+        kind: 'message',
+        text: 'Ready',
+        to: 'participant',
+      },
+    ]);
+    expect(formatMotion(source)).toEqual({ diagnostics: [], formatted: source });
+    expect(parseMotion(formatMotion(source).formatted).diagnostics).toEqual([]);
+  });
+
+  it('keeps unquoted selector keywords as their special forms', () => {
+    const source = `motionDiagram-v1
+  highlight diagram
+  highlight messages
+  pulse message Worker->>API: "Ready"
+  highlight node diagram
+`;
+    const selectors = parseMotion(source).document?.statements.flatMap((statement) =>
+      statement.kind === 'effect' ? [statement.selector] : [],
+    );
+
+    expect(parseMotion(source).diagnostics).toEqual([]);
+    expect(selectors).toEqual([
+      { kind: 'diagram' },
+      { kind: 'allMessages' },
+      {
+        arrow: '->>',
+        from: 'Worker',
+        kind: 'message',
+        text: 'Ready',
+        to: 'API',
+      },
+      { id: 'diagram', kind: 'id', targetKind: 'node' },
+    ]);
+  });
+
   it('uses over for trace routes and for for target effect durations', () => {
     const source = `motionDiagram-v1
   trace A --> M --> X over 1.2s
@@ -221,6 +282,17 @@ motionDiagram-v1;
         }),
       ]),
     );
+  });
+
+  it('preserves an explicit first message occurrence when formatting', () => {
+    const source = `motionDiagram-v1
+  pulse message Worker->>API: "GET /status" occurrence 1 for 300ms
+`;
+
+    expect(parseMotion(source).document?.statements[0]).toMatchObject({
+      selector: { kind: 'message', occurrence: 1 },
+    });
+    expect(formatMotion(source)).toEqual({ formatted: source, diagnostics: [] });
   });
 
   it('includes compiler diagnostics in motion validation', () => {

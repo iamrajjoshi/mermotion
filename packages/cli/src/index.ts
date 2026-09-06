@@ -9,6 +9,7 @@ import {
   validateMotion,
 } from '@mermotion/engine';
 import { runCli, type CliDependencies } from './cli.js';
+import { prepareRenderer, renderDiagram } from './render.js';
 
 const dependencies: CliDependencies = {
   engine: {
@@ -19,10 +20,16 @@ const dependencies: CliDependencies = {
     validateMermaid,
     validateMotion,
   },
+  prepareRenderer,
+  render: renderDiagram,
   output: {
     stdout: (message) => process.stdout.write(message),
     stderr: (message) => process.stderr.write(message),
   },
 };
 
-process.exitCode = await runCli(process.argv.slice(2), dependencies);
+export async function main(arguments_: readonly string[] = process.argv.slice(2)): Promise<number> {
+  return runCli(arguments_, dependencies);
+}
+
+process.exitCode = await main();

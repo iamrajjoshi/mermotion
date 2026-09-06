@@ -1,4 +1,4 @@
-import type { SemanticTarget } from '@mermotion/engine';
+import { formatMotionIdentifier, type SemanticTarget } from '@mermotion/engine';
 
 function quoteMotionValue(value: string): string {
   return `"${value
@@ -8,8 +8,8 @@ function quoteMotionValue(value: string): string {
     .replaceAll('\t', '\\t')}"`;
 }
 
-function motionId(id: string): string {
-  return /^[A-Za-z0-9_.-]+$/.test(id) ? id : quoteMotionValue(id);
+export function motionId(id: string): string {
+  return formatMotionIdentifier(id);
 }
 
 export function selectorForTarget(target: SemanticTarget): string {
@@ -26,8 +26,8 @@ export function selectorForTarget(target: SemanticTarget): string {
       const to = motionId(target.to ?? '');
       const arrow = target.arrow ?? '->>';
       const label = quoteMotionValue(target.label ?? target.id);
-      const occurrence = (target.occurrence ?? 1) > 1 ? ` occurrence ${target.occurrence}` : '';
-      return `message ${from}${arrow}${to}: ${label}${occurrence}`;
+      const occurrence = Math.max(1, target.occurrence ?? 1);
+      return `message ${from}${arrow}${to}: ${label} occurrence ${occurrence}`;
     }
     default:
       return motionId(target.id);

@@ -1,7 +1,7 @@
 import { compileMotion, type SemanticTarget } from '@mermotion/engine';
 import { describe, expect, it } from 'vitest';
 
-import { motionStatementForTarget, selectorForTarget } from './target-source';
+import { motionId, motionStatementForTarget, selectorForTarget } from './target-source';
 
 const target = (overrides: Partial<SemanticTarget>): SemanticTarget => ({
   id: 'checkout',
@@ -16,8 +16,28 @@ describe('target source serialization', () => {
     [target({}), 'checkout'],
     [target({ id: 'Browser', key: 'participant:Browser', kind: 'participant' }), 'Browser'],
     [target({ id: 'diagram', key: 'diagram', kind: 'diagram' }), 'diagram'],
+    [target({ id: 'diagram', key: 'node:diagram' }), '"diagram"'],
   ] as const)('serializes %s', (semanticTarget, expected) => {
     expect(selectorForTarget(semanticTarget)).toBe(expected);
+  });
+
+  it.each([
+    ['diagram', '"diagram"'],
+    ['message', '"message"'],
+    ['messages', '"messages"'],
+    ['edge', '"edge"'],
+    ['edges', '"edges"'],
+    ['node', '"node"'],
+    ['participant', '"participant"'],
+    ['for', '"for"'],
+    ['123', '"123"'],
+    ['400ms', '"400ms"'],
+    ['.5s', '".5s"'],
+    ['-xray', '"-xray"'],
+    ['two words', '"two words"'],
+    ['checkout-api', 'checkout-api'],
+  ])('serializes the motion ID %s without changing its meaning', (id, expected) => {
+    expect(motionId(id)).toBe(expected);
   });
 
   it('keeps repeated sequence messages unambiguous and escapes their label', () => {
@@ -37,7 +57,7 @@ describe('target source serialization', () => {
     ).toBe('message Worker->>API: "Say \\"ready\\"" occurrence 2');
   });
 
-  it('omits the default occurrence for a unique sequence message', () => {
+  it('keeps the first sequence-message occurrence explicit in generated source', () => {
     expect(
       selectorForTarget(
         target({
@@ -51,7 +71,7 @@ describe('target source serialization', () => {
           to: 'API',
         }),
       ),
-    ).toBe('message Worker->>API: "Ready"');
+    ).toBe('message Worker->>API: "Ready" occurrence 1');
   });
 
   it('writes a stable route for a clicked connection instead of its generated SVG ID', () => {

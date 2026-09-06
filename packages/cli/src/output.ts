@@ -1,26 +1,25 @@
-import type { Diagnostic, DiagnosticSeverity, SourceSpan } from '@mermotion/engine';
+import type { Diagnostic, SourceSpan } from '@mermotion/engine';
 
 export type CliCommand =
+  | 'setup'
   | 'validate'
+  | 'render'
   | 'motion.check'
   | 'motion.fmt'
   | 'motion.compile'
   | 'sample'
   | 'cli';
 
-export interface CliDiagnostic {
-  code: string;
-  severity: DiagnosticSeverity;
-  message: string;
+export interface CliDiagnostic extends Omit<Diagnostic, 'span'> {
   span?: SourceSpan;
   file?: string;
 }
 
-export interface JsonEnvelope {
+export interface JsonEnvelope<Data> {
   schemaVersion: 1;
   command: CliCommand;
   ok: boolean;
-  data: unknown;
+  data: Data;
   diagnostics: CliDiagnostic[];
 }
 
@@ -29,12 +28,12 @@ export interface OutputWriter {
   stderr(message: string): void;
 }
 
-export function jsonEnvelope(
+export function jsonEnvelope<Data>(
   command: CliCommand,
   ok: boolean,
-  data: unknown,
+  data: Data,
   diagnostics: CliDiagnostic[],
-): JsonEnvelope {
+): JsonEnvelope<Data> {
   return {
     schemaVersion: 1,
     command,
@@ -44,7 +43,7 @@ export function jsonEnvelope(
   };
 }
 
-export function writeJson(output: OutputWriter, envelope: JsonEnvelope): void {
+export function writeJson<Data>(output: OutputWriter, envelope: JsonEnvelope<Data>): void {
   output.stdout(`${JSON.stringify(envelope, null, 2)}\n`);
 }
 

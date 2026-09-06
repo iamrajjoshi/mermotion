@@ -1,0 +1,7 @@
+motionDiagram-v1
+  defaults duration 400ms easing ease-out color #ff5470
+  marker request as "Request"
+
+  at 0ms highlight source
+  with trace source --> api over 800ms
+  with move request along source --> api --> worker over 1.2s

@@ -29,23 +29,40 @@ twice the time of a 100-pixel leg under linear motion.
 ## The behavior contract
 
 1. Motion only exists when the author declares it. There are no random phases or automatic traffic.
-2. A named marker keeps its DOM node, color, label, and identity until `remove` runs.
+2. A named marker keeps its DOM node, color, label, and identity until the compatibility-only
+   `remove` verb runs. A later move after `remove` starts a new marker incarnation.
 3. `move` and `trace` follow Mermaid's rendered geometry. A missing or ambiguous route produces a
    diagnostic instead of a center-to-center guess.
 4. A later move for the same marker must start where the prior move ended. Overlaps and discontinuous
    restarts fail compilation.
 5. Playback and seeking are pure functions of time. Re-seeking a timestamp returns the same frame and
-   the same position.
-6. Literal travel should use `linear`. Easing belongs on state changes such as `pulse`, `reveal`, and
-   `hide`, where acceleration doesn't claim a changing transfer rate.
+   the same position, color, lifecycle, and paint order.
+6. `move` and `trace` default to linear travel, even when the document default uses another easing
+   for state changes such as `pulse`. A route needs no redundant `easing linear` clause.
 
-| Effect                      | Job                                      | Suggested motion                       |
-| --------------------------- | ---------------------------------------- | -------------------------------------- |
-| `move`                      | Carry one named thing through the system | Linear, measured across the full route |
-| `trace`                     | Show which connections participate       | Linear draw, removed when its cue ends |
-| `pulse`                     | Mark an arrival or state change          | One short cycle, then stop             |
-| `reveal` / `hide`           | Control reading order                    | Brief eased transition                 |
-| `highlight` / `unhighlight` | Hold or release attention                | Restrained color or shadow change      |
+## Marker treatment
+
+A moving marker has four authored-time layers:
+
+- one 9-pixel signal bead that stays visible through nodes and remains at the destination;
+- a 19-pixel core tail and 34-pixel soft tail, both ending at the bead;
+- one label plaque whose direction is selected from the complete route and does not flip at a node;
+- one 200-millisecond arrival ring with zero opacity at both endpoints and a restrained midpoint
+  peak.
+
+The tails are two retained full-route paths. Their `d` values never change during a move; only the
+paint interval, width, and opacity change. They use a four-part normalized dash pattern so each
+painted interval has one bounded start and end. They do not use `non-scaling-stroke`: in a scaled SVG,
+that property makes normalized dash positions diverge from route positions. Width and tail length
+are instead converted to root user units from the current screen scale. Browser tests sample the
+paint itself on both sides of the bead, so a tail that moves in front of its marker fails.
+
+| Effect      | Job                                      | Suggested motion                       |
+| ----------- | ---------------------------------------- | -------------------------------------- |
+| `move`      | Carry one named thing through the system | Linear, measured across the full route |
+| `trace`     | Show which connections participate       | Linear draw, removed when its cue ends |
+| `pulse`     | Mark an arrival or state change          | One short cycle, then stop             |
+| `highlight` | Hold attention                           | Restrained color or shadow change      |
 
 ## What we took from Fanfa
 
@@ -62,23 +79,49 @@ and can imply traffic that the diagram never declared.
 
 ## Runtime limits
 
-Geometry gets measured once per rendered SVG and cached. The overlay, marker groups, and trace paths
-stay mounted while a cue updates transforms and dash offsets. Mermaid re-rendering creates a new SVG,
-which naturally invalidates those caches.
+Geometry gets measured once per rendered SVG and cached. The overlay, marker groups, marker-tail
+paths, and trace paths stay mounted while a cue updates transforms and paint attributes. Mermaid
+re-rendering creates a new SVG, which naturally invalidates those caches. Source colors are cached
+after their first computed-style read. An implicit marker color is tied to the first rendered route
+source in its current incarnation, so a direct seek and a played seek resolve to the same color.
+
+Mermaid `themeCSS` still owns the diagram, but broad rules such as `path { ... }` must not rewrite
+the motion overlay's dash geometry, scale behavior, or reduced-motion visibility. Mermotion writes
+those overlay-only presentation properties as isolated inline declarations; browser tests include a
+hostile broad theme rule and inspect the resulting paint. Trace groups always paint below marker
+groups, and authored event order determines order within each layer even after a backward seek has
+removed and recreated elements.
+
+Mermaid-authored CSS transitions and animations are paused while a frame is sampled. Mermotion only
+overrides the activation longhands, preserves authored durations and timing functions, and restores
+the original inline values and priorities when motion is removed. The final sampled value is committed
+before those transitions resume, so deleting the last cue does not create a several-second drift back
+to the diagram's original appearance.
 
 Reduced-motion mode preserves the semantic marker position while removing its decorative trail,
-halo, wake, and arrival ring. Browser tests cover state effects plus marker and trace travel on one
-unique sequence message. M2 owns optional authored node dwell and a selector that can distinguish
-one of several same-direction repeated message routes.
+halo, and arrival ring. Browser tests cover state effects plus marker and trace travel on unique and
+repeated sequence messages. Repeated signatures use explicit one-based occurrences. Authored node
+dwell and a stable selector for parallel same-endpoint flowchart connections remain optional later
+work.
 
 ## Proof required for changes
 
 - Marker position matches the rendered route within 1.5 CSS pixels during a seek and at its
   destination.
+- Tail paint ends at the marker rather than appearing ahead of it, including after preview zoom.
 - A multi-hop route sampled every 20ms has no node-boundary displacement spike.
 - Trace source and clone agree at the start, midpoint, and end under their screen transforms.
 - Marker and overlay DOM identities survive repeated seeks.
-- Compiler tests cover continuous, discontinuous, and overlapping moves.
+- Direct and played seeks resolve the same implicit marker color; compatibility-only `remove` starts
+  a new DOM incarnation.
+- Broad Mermaid `themeCSS` cannot override overlay dash geometry, screen scaling, or reduced-motion
+  visibility, group transforms, opacity, or hit testing.
+- Compiler tests cover continuous, discontinuous, and overlapping moves, including rescheduling later
+  implicit cues after an invalid move is rejected.
+
+The browser suite seeks two frames after warm-up and rejects bounding-box reads, computed-style
+reads, child-list rebuilding, or more than two screen-transform reads. This is a repeatable regression
+guard for the warmed sampling path, not a frame-rate claim.
 
 The geometry model comes from the [SVG coordinate-system
 specification](https://www.w3.org/TR/SVG/coords.html). Long-running automatic motion will also need the

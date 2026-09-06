@@ -1,0 +1,6 @@
+sequenceDiagram
+  participant worker as Queue worker
+  participant api as Status gateway
+  worker->>api: GET /status
+  api-->>worker: 200 OK
+  worker->>api: GET /status

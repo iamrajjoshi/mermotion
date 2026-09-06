@@ -7,8 +7,17 @@ export default defineConfig({
     },
   },
   testDir: './e2e',
+  // Mermaid startup is CPU-heavy. Capping concurrency keeps Firefox and IndexedDB timing stable on
+  // shared CI runners without weakening individual test timeouts.
+  workers: 2,
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    {
+      name: 'chromium',
+      use: {
+        ...devices['Desktop Chrome'],
+        permissions: ['clipboard-read', 'clipboard-write'],
+      },
+    },
     { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
   ],
   use: {

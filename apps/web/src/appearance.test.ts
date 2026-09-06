@@ -9,7 +9,6 @@ import {
   shellPaletteCssVariables,
   shellPaletteNames,
   shellPalettes,
-  writeMermaidPalette,
 } from './appearance';
 
 function luminance(color: string): number {
@@ -96,11 +95,5 @@ describe('appearance palettes', () => {
       primaryColor: '#abcdef',
       lineColor: '#687086',
     });
-  });
-
-  it('exposes palette source editing through the appearance module', () => {
-    expect(writeMermaidPalette('flowchart LR\n  A --> B', { lineColor: '#112233' })).toContain(
-      'lineColor: "#112233"',
-    );
   });
 });

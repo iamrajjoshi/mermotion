@@ -147,22 +147,27 @@ function resolveSelector(
   if (selector.kind === 'message') {
     if (!targets)
       return [
-        `message:${selector.from}${selector.arrow}${selector.to}:${selector.text}#${selector.occurrence}`,
+        `message:${selector.from}${selector.arrow}${selector.to}:${selector.text}#${selector.occurrence ?? 1}`,
       ];
-    const matches = targets.filter(
+    const signatureMatches = targets.filter(
       (target) =>
         target.kind === 'message' &&
         target.from === selector.from &&
         target.to === selector.to &&
         target.arrow === selector.arrow &&
-        target.label === selector.text &&
-        target.occurrence === selector.occurrence,
+        target.label === selector.text,
     );
+    const matches =
+      selector.occurrence === undefined
+        ? signatureMatches
+        : signatureMatches.filter((target) => target.occurrence === selector.occurrence);
     if (matches.length === 0)
       diagnostics.push(
         compileDiagnostic(
           'motion.target-not-found',
-          `Message '${selector.from}${selector.arrow}${selector.to}: ${selector.text}' occurrence ${selector.occurrence} was not found.`,
+          selector.occurrence === undefined
+            ? `Message '${selector.from}${selector.arrow}${selector.to}: ${selector.text}' was not found.`
+            : `Message '${selector.from}${selector.arrow}${selector.to}: ${selector.text}' occurrence ${selector.occurrence} was not found.`,
           span,
         ),
       );
@@ -170,11 +175,13 @@ function resolveSelector(
       diagnostics.push(
         compileDiagnostic(
           'motion.ambiguous-target',
-          'The message selector matched more than one rendered target.',
+          selector.occurrence === undefined
+            ? `Message '${selector.from}${selector.arrow}${selector.to}: ${selector.text}' matches more than one rendered message. Add a one-based occurrence.`
+            : 'The message selector matched more than one rendered target.',
           span,
         ),
       );
-    return matches.map((target) => target.key);
+    return matches.length === 1 && matches[0] ? [matches[0].key] : [];
   }
   if (selector.kind === 'edges') {
     if (!targets) return selector.ids.map((id) => inferredKey('edge', id));
@@ -268,6 +275,27 @@ function eventId(statement: MotionStatement, suffix = ''): string {
     : `cue-${statement.sourceIndex + 1}${suffix}`;
 }
 
+function uniqueDiagnostics(diagnostics: Diagnostic[]): Diagnostic[] {
+  const seen = new Set<string>();
+  return diagnostics.filter((diagnostic) => {
+    const { span } = diagnostic;
+    const key = [
+      diagnostic.severity,
+      diagnostic.code,
+      diagnostic.message,
+      span.start,
+      span.end,
+      span.line,
+      span.column,
+      span.endLine,
+      span.endColumn,
+    ].join('\u0000');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function compileMotion(
   input: DiagramDocument | MotionDocument,
   options: CompileOptions = {},
@@ -283,6 +311,7 @@ export function compileMotion(
   const labels = new Map<string, { startMs: number; endMs: number }>();
   let defaults: MotionDefaults = { durationMs: 400, easing: 'ease-out' };
   let cursorMs = 0;
+  let waitEndMs = 0;
   let previousStartMs = 0;
 
   for (const statement of document.statements) {
@@ -333,6 +362,7 @@ export function compileMotion(
       if (statementHasErrors()) continue;
       const startMs = cursorMs;
       cursorMs += statement.durationMs;
+      waitEndMs = Math.max(waitEndMs, cursorMs);
       previousStartMs = startMs;
       if (statement.label) labels.set(statement.label, { startMs, endMs: cursorMs });
       continue;
@@ -402,7 +432,10 @@ export function compileMotion(
         kind: 'move',
         startMs,
         durationMs,
-        easing: statement.easing ?? defaults.easing,
+        // A route represents transport at an authored rate. Keep it linear unless the author
+        // explicitly asks for a different curve; state-transition defaults must not make data
+        // appear to accelerate independently of its declared duration.
+        easing: statement.easing ?? 'linear',
         sourceIndex: statement.sourceIndex,
         sourceSpan: statement.span,
         targetKeys: route,
@@ -462,7 +495,7 @@ export function compileMotion(
       kind: statement.effect,
       startMs,
       durationMs,
-      easing: statement.easing ?? defaults.easing,
+      easing: statement.easing ?? (statement.effect === 'trace' ? 'linear' : defaults.easing),
       sourceIndex: statement.sourceIndex,
       sourceSpan: statement.span,
       targetKeys: keys,
@@ -482,6 +515,7 @@ export function compileMotion(
       left.id.localeCompare(right.id),
   );
   const validEvents: CompiledEvent[] = [];
+  let rejectedMoveSourceIndex: number | undefined;
   const markerPositions = new Map<string, { destination: string; endMs: number }>();
   for (const event of sortedEvents) {
     if (event.kind === 'removeMarker' && event.markerId) {
@@ -503,7 +537,8 @@ export function compileMotion(
           event.sourceSpan,
         ),
       );
-      continue;
+      rejectedMoveSourceIndex = event.sourceIndex;
+      break;
     }
     const origin = event.route[0];
     if (previous && origin !== previous.destination) {
@@ -514,7 +549,8 @@ export function compileMotion(
           event.sourceSpan,
         ),
       );
-      continue;
+      rejectedMoveSourceIndex = event.sourceIndex;
+      break;
     }
 
     validEvents.push(event);
@@ -525,6 +561,25 @@ export function compileMotion(
         endMs: event.startMs + event.durationMs,
       });
     }
+  }
+
+  // Move continuity is knowable only after chronological ordering. If one is rejected, compile
+  // again without that authored statement so later implicit cues are scheduled after the last
+  // valid cue, rather than after time that belongs to an event which will never render.
+  if (rejectedMoveSourceIndex !== undefined) {
+    const recompiled = compileMotion(
+      {
+        ...document,
+        statements: document.statements.filter(
+          (statement) => statement.sourceIndex !== rejectedMoveSourceIndex,
+        ),
+      },
+      options,
+    );
+    return {
+      ...(recompiled.timeline ? { timeline: recompiled.timeline } : {}),
+      diagnostics: uniqueDiagnostics([...diagnostics, ...recompiled.diagnostics]),
+    };
   }
 
   const eventTargetKeys = validEvents.flatMap((event) => event.targetKeys);
@@ -538,7 +593,7 @@ export function compileMotion(
   ];
   const durationMs = validEvents.reduce(
     (maximum, event) => Math.max(maximum, event.startMs + event.durationMs),
-    cursorMs,
+    waitEndMs,
   );
   const nextMarkerChange = new Map<string, number>();
   let visualDurationMs = durationMs;
@@ -576,8 +631,9 @@ function easingProgress(easing: MotionEasing, progress: number): number {
 }
 
 function frameTarget(key: string, hidden: Set<string>): FrameTargetState {
-  const opacity = hidden.has(key) ? 0 : 1;
-  return { key, visible: opacity > 0, opacity, highlight: 0, pulse: 0 };
+  const opacityControlled = hidden.has(key);
+  const opacity = opacityControlled ? 0 : 1;
+  return { key, visible: opacity > 0, opacity, opacityControlled, highlight: 0, pulse: 0 };
 }
 
 function eventProgress(event: CompiledEvent, timeMs: number): number {
@@ -615,6 +671,7 @@ function sampleMarker(
   const at = progress >= 1 ? (destination ?? to) : from;
   return {
     id: definition.id,
+    incarnation: 0,
     label: definition.label,
     shape: definition.shape,
     route: event.route,
@@ -640,6 +697,8 @@ export function sampleTimeline(timeline: CompiledTimeline, requestedTimeMs: numb
     timeline.targetKeys.map((key) => [key, frameTarget(key, hidden)]),
   );
   const markers: Record<string, FrameMarkerState> = {};
+  const markerIncarnations = new Map<string, number>();
+  const markerAppearances = new Map<string, Pick<FrameMarkerState, 'color' | 'colorSourceKey'>>();
   const traces: FrameState['traces'] = [];
 
   const ensureTarget = (key: string): FrameTargetState => {
@@ -655,11 +714,36 @@ export function sampleTimeline(timeline: CompiledTimeline, requestedTimeMs: numb
     const progress = eventProgress(event, timeMs);
     if (event.kind === 'move') {
       const marker = sampleMarker(event, timeline, timeMs);
-      if (marker) markers[marker.id] = marker;
+      if (marker) {
+        marker.incarnation = markerIncarnations.get(marker.id) ?? 0;
+        let appearance = markerAppearances.get(marker.id);
+        if (event.color !== undefined) {
+          const colorSourceKey = event.routeEdgeKeys?.[0] ?? event.route[0];
+          appearance = {
+            color: event.color,
+            ...(colorSourceKey === undefined ? {} : { colorSourceKey }),
+          };
+        } else if (!appearance) {
+          const colorSourceKey = event.routeEdgeKeys?.[0] ?? event.route[0];
+          appearance = colorSourceKey === undefined ? {} : { colorSourceKey };
+        }
+        const resolvedAppearance = appearance ?? {};
+        markerAppearances.set(marker.id, resolvedAppearance);
+        delete marker.color;
+        if (resolvedAppearance.color !== undefined) marker.color = resolvedAppearance.color;
+        if (resolvedAppearance.colorSourceKey !== undefined) {
+          marker.colorSourceKey = resolvedAppearance.colorSourceKey;
+        }
+        markers[marker.id] = marker;
+      }
       continue;
     }
     if (event.kind === 'removeMarker') {
-      if (event.markerId) delete markers[event.markerId];
+      if (event.markerId) {
+        delete markers[event.markerId];
+        markerAppearances.delete(event.markerId);
+        markerIncarnations.set(event.markerId, (markerIncarnations.get(event.markerId) ?? 0) + 1);
+      }
       continue;
     }
     if (event.kind === 'trace') {
@@ -678,10 +762,13 @@ export function sampleTimeline(timeline: CompiledTimeline, requestedTimeMs: numb
       if (event.kind === 'highlight')
         state.highlight = state.highlight + (1 - state.highlight) * progress;
       else if (event.kind === 'unhighlight') state.highlight *= 1 - progress;
-      else if (event.kind === 'reveal')
+      else if (event.kind === 'reveal') {
+        state.opacityControlled = true;
         state.opacity = state.opacity + (1 - state.opacity) * progress;
-      else if (event.kind === 'hide') state.opacity *= 1 - progress;
-      else if (event.kind === 'pulse' && timeMs < event.startMs + event.durationMs)
+      } else if (event.kind === 'hide') {
+        state.opacityControlled = true;
+        state.opacity *= 1 - progress;
+      } else if (event.kind === 'pulse' && timeMs < event.startMs + event.durationMs)
         state.pulse = Math.max(state.pulse, Math.sin(progress * Math.PI));
       if (event.color !== undefined) state.color = event.color;
       state.visible = state.opacity > 0.001;
@@ -690,8 +777,6 @@ export function sampleTimeline(timeline: CompiledTimeline, requestedTimeMs: numb
 
   return { timeMs, durationMs: timeline.durationMs, targets, markers, traces };
 }
-
-export const sampleMotion = sampleTimeline;
 
 export function emptyTimeline(): CompiledTimeline {
   return {

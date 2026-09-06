@@ -10,5 +10,6 @@
     "tsBuildInfoFile": "../../node_modules/.cache/cli.tsbuildinfo",
     "types": ["node"]
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/browser-entry.ts"]
 }

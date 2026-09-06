@@ -116,6 +116,35 @@ describe('motion compilation and sampling', () => {
     expect(frame.markers.request?.color).toBe('#62a8ff');
   });
 
+  it('samples marker color identity independently of prior seeks', () => {
+    const timeline = compile(`motionDiagram-v1
+  marker request as "Request"
+  at 0ms move request along A --> B over 1s easing linear
+  move request along B --> C over 1s easing linear
+`);
+
+    expect(sampleTimeline(timeline, 100).markers.request).toMatchObject({
+      colorSourceKey: 'edge:A-->B#1',
+    });
+    expect(sampleTimeline(timeline, 1_100).markers.request).toMatchObject({
+      route: ['node:B', 'node:C'],
+      colorSourceKey: 'edge:A-->B#1',
+    });
+  });
+
+  it('resets inherited marker color identity after remove', () => {
+    const timeline = compile(`motionDiagram-v1
+  marker request as "Request"
+  at 0ms move request along A --> B over 1s easing linear
+  remove request
+  move request along B --> C over 1s easing linear
+`);
+
+    expect(sampleTimeline(timeline, 1_100).markers.request).toMatchObject({
+      colorSourceKey: 'edge:B-->C#1',
+    });
+  });
+
   it('samples a deterministic 200ms arrival after movement finishes', () => {
     const timeline = compile(`motionDiagram-v1
   defaults duration 100ms easing linear
@@ -244,6 +273,35 @@ describe('motion compilation and sampling', () => {
     expect(boundary?.id).toBe(afterBoundary?.id);
   });
 
+  it('defaults literal route motion to linear without changing state-effect easing', () => {
+    const timeline = compile(`motionDiagram-v1
+  defaults duration 400ms easing ease-out
+  marker request as "Request"
+  move request along A --> B
+  trace A --> B
+  highlight B
+`);
+
+    expect(timeline.events).toEqual([
+      expect.objectContaining({ kind: 'move', easing: 'linear' }),
+      expect.objectContaining({ kind: 'trace', easing: 'linear' }),
+      expect.objectContaining({ kind: 'highlight', easing: 'ease-out' }),
+    ]);
+  });
+
+  it('respects an explicit route easing', () => {
+    const timeline = compile(`motionDiagram-v1
+  marker request as "Request"
+  move request along A --> B easing ease-in-out
+  trace A --> B easing ease-in
+`);
+
+    expect(timeline.events).toEqual([
+      expect.objectContaining({ kind: 'move', easing: 'ease-in-out' }),
+      expect.objectContaining({ kind: 'trace', easing: 'ease-in' }),
+    ]);
+  });
+
   it('accepts contiguous marker moves and rejects discontinuous ones', () => {
     const contiguous = compile(`motionDiagram-v1
   defaults duration 100ms easing linear
@@ -258,7 +316,7 @@ describe('motion compilation and sampling', () => {
   defaults duration 100ms easing linear
   marker request as "Request" shape dot
   move request along A --> B
-  move request along A --> B
+  move request along A --> B over 10s
 `,
       { targets: flowTargets },
     );
@@ -268,6 +326,7 @@ describe('motion compilation and sampling', () => {
       ]),
     );
     expect(discontinuous.timeline?.events.filter(({ kind }) => kind === 'move')).toHaveLength(1);
+    expect(discontinuous.timeline?.durationMs).toBe(300);
   });
 
   it('rejects overlapping moves for one marker', () => {
@@ -275,7 +334,7 @@ describe('motion compilation and sampling', () => {
       `motionDiagram-v1
   marker request as "Request" shape dot
   at 0ms move request along A --> B over 1s easing linear
-  at 500ms move request along B --> C over 1s easing linear
+  at 500ms move request along B --> C over 10s easing linear
 `,
       { targets: flowTargets },
     );
@@ -283,6 +342,60 @@ describe('motion compilation and sampling', () => {
       expect.arrayContaining([expect.objectContaining({ code: 'motion.overlapping-marker-move' })]),
     );
     expect(result.timeline?.events.filter(({ kind }) => kind === 'move')).toHaveLength(1);
+    expect(result.timeline?.durationMs).toBe(1_200);
+  });
+
+  it('does not let a rejected move delay later implicit cues', () => {
+    const result = compileMotionSource(
+      `motionDiagram-v1
+  defaults duration 100ms easing linear
+  marker request as "Request"
+  move request along A --> B
+  move request along A --> B over 10s
+  highlight C
+`,
+      { targets: flowTargets },
+    );
+
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'motion.discontinuous-marker-route' }),
+      ]),
+    );
+    expect(result.timeline?.events).toEqual([
+      expect.objectContaining({ kind: 'move', startMs: 0, durationMs: 100 }),
+      expect.objectContaining({ kind: 'highlight', startMs: 100, durationMs: 100 }),
+    ]);
+    expect(result.timeline?.durationMs).toBe(300);
+  });
+
+  it('revalidates later moves after compacting one rejected implicit cue', () => {
+    const result = compileMotionSource(
+      `motionDiagram-v1
+  defaults duration 100ms easing linear
+  marker request as "Request"
+  move request along A --> B
+  move request along A --> B over 10s
+  move request along B --> C
+  at 500ms move request along B --> C
+`,
+      { targets: flowTargets },
+    );
+
+    expect(result.timeline?.events).toEqual([
+      expect.objectContaining({ kind: 'move', sourceIndex: 2, startMs: 0, durationMs: 100 }),
+      expect.objectContaining({ kind: 'move', sourceIndex: 4, startMs: 100, durationMs: 100 }),
+    ]);
+    expect(result.timeline?.durationMs).toBe(400);
+    expect(
+      result.diagnostics.filter(
+        ({ code }) =>
+          code === 'motion.discontinuous-marker-route' || code === 'motion.overlapping-marker-move',
+      ),
+    ).toEqual([
+      expect.objectContaining({ span: expect.objectContaining({ line: 5 }) }),
+      expect.objectContaining({ span: expect.objectContaining({ line: 7 }) }),
+    ]);
   });
 
   it('reports unknown semantic targets instead of guessing', () => {
@@ -295,6 +408,142 @@ describe('motion compilation and sampling', () => {
     expect(result.diagnostics).toEqual(
       expect.arrayContaining([expect.objectContaining({ code: 'motion.target-not-found' })]),
     );
+  });
+
+  it('compiles the same semantic bindings after label, source-order, layout, and theme edits', () => {
+    const source = `motionDiagram-v1
+  marker request as "Request"
+  at 0ms highlight A
+  with trace A --> B over 800ms
+  with move request along A --> B --> C over 1.2s
+`;
+    const variants: SemanticTarget[][] = [
+      flowTargets,
+      flowTargets.map((target) => ({
+        ...target,
+        order: flowTargets.length - target.order,
+        ...(target.kind === 'node' ? { label: `Changed ${target.id}` } : {}),
+      })),
+      flowTargets.map((target) =>
+        target.kind === 'edge'
+          ? { ...target, id: `different-rendered-id-${target.order}` }
+          : { ...target },
+      ),
+    ];
+
+    const compilations = variants.map((targets) => compileMotionSource(source, { targets }));
+    for (const result of compilations) expect(result.diagnostics).toEqual([]);
+
+    const bindings = compilations.map((result) =>
+      result.timeline?.events.map(({ kind, route, routeEdgeKeys, targetKeys }) => ({
+        kind,
+        route,
+        routeEdgeKeys,
+        targetKeys,
+      })),
+    );
+    expect(bindings[1]).toEqual(bindings[0]);
+    expect(bindings[2]).toEqual(bindings[0]);
+  });
+
+  it.each([
+    {
+      name: 'deleted',
+      targets: flowTargets.filter(
+        (target) => target.id !== 'A' && !(target.from === 'A' && target.to === 'B'),
+      ),
+    },
+    {
+      name: 'renamed while retaining its label',
+      targets: flowTargets.map((target) => {
+        if (target.kind === 'node' && target.id === 'A')
+          return { ...target, key: 'node:origin', id: 'origin', label: 'Client' };
+        if (target.kind === 'edge' && target.from === 'A')
+          return {
+            ...target,
+            key: 'edge:origin-->B#1',
+            id: 'L_origin_B_0',
+            from: 'origin',
+          };
+        return target;
+      }),
+    },
+  ])('fails $name IDs instead of rebinding by label', ({ targets }) => {
+    const result = compileMotionSource(
+      'motionDiagram-v1\n  at 0ms highlight A\n  with trace A --> B over 400ms\n',
+      { targets },
+    );
+
+    expect(result.timeline?.events).toEqual([]);
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'motion.target-not-found', severity: 'error' }),
+        expect.objectContaining({ code: 'motion.route-edge-not-found', severity: 'error' }),
+      ]),
+    );
+  });
+
+  it('rejects duplicate semantic IDs instead of taking the first rendered target', () => {
+    const targets: SemanticTarget[] = [
+      ...flowTargets,
+      { key: 'node:A-duplicate', kind: 'node', id: 'A', label: 'Client copy', order: 5 },
+    ];
+    const result = compileMotionSource('motionDiagram-v1\n  highlight A\n', { targets });
+
+    expect(result.timeline?.events).toEqual([]);
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({ code: 'motion.ambiguous-target', severity: 'error' }),
+    ]);
+  });
+
+  it.each([
+    ['deleted occurrence', sequenceTargets.slice(0, 3)],
+    [
+      'renamed message',
+      sequenceTargets.map((target) =>
+        target.kind === 'message' && target.label === 'GET /status'
+          ? {
+              ...target,
+              key: target.key.replace('GET /status', 'GET /health'),
+              label: 'GET /health',
+            }
+          : target,
+      ),
+    ],
+  ])('fails a %s instead of rebinding a repeated sequence message', (_name, targets) => {
+    const result = compileMotionSource(
+      'motionDiagram-v1\n  pulse message Worker->>API: "GET /status" occurrence 2\n',
+      { targets },
+    );
+
+    expect(result.timeline?.events).toEqual([]);
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({ code: 'motion.target-not-found', severity: 'error' }),
+    ]);
+  });
+
+  it('requires an explicit occurrence when otherwise identical sequence messages repeat', () => {
+    const ambiguous = compileMotionSource(
+      'motionDiagram-v1\n  pulse message Worker->>API: "GET /status"\n',
+      { targets: sequenceTargets },
+    );
+    expect(ambiguous.timeline?.events).toEqual([]);
+    expect(ambiguous.diagnostics).toEqual([
+      expect.objectContaining({
+        code: 'motion.ambiguous-target',
+        message: expect.stringContaining('Add a one-based occurrence'),
+        severity: 'error',
+      }),
+    ]);
+
+    const first = compileMotionSource(
+      'motionDiagram-v1\n  pulse message Worker->>API: "GET /status" occurrence 1\n',
+      { targets: sequenceTargets },
+    );
+    expect(first.diagnostics).toEqual([]);
+    expect(first.timeline?.events).toEqual([
+      expect.objectContaining({ targetKeys: ['message:Worker->>API:GET /status#1'] }),
+    ]);
   });
 
   it('uses the Mermaid arrow when resolving otherwise identical messages', () => {

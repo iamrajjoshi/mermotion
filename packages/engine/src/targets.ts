@@ -1,3 +1,5 @@
+import { pointInSvgSpace, screenScale, transformedElementBounds } from './svg-geometry.js';
+import type { SvgBounds as Bounds, SvgPoint as Point } from './svg-geometry.js';
 import type { ApplyFrameOptions, FrameMarkerState, FrameState, SemanticTarget } from './types.js';
 
 const TARGET_ATTRIBUTE = 'data-mermotion-target';
@@ -94,7 +96,7 @@ function discoverFromString(svg: string, diagramType?: string): SemanticTarget[]
   ];
   const nodes: Array<{ index: number; id: string; label?: string }> = [];
   for (const match of svg.matchAll(
-    /<g\b([^>]*\bclass=(?:"[^"]*\bnode\b[^"]*"|'[^']*\bnode\b[^']*')[^>]*)>([\s\S]*?)<\/g>/gi,
+    /<g\b([^>]*\bclass=(?:"[^"]*\b(?:node|image-shape|icon-shape)\b[^"]*"|'[^']*\b(?:node|image-shape|icon-shape)\b[^']*')[^>]*)>([\s\S]*?)<\/g>/gi,
   )) {
     const attributes = attributesFrom(match[1] ?? '');
     if (!attributes.id) continue;
@@ -206,10 +208,11 @@ function discoverFromDom(root: ParentNode, diagramType?: string): SemanticTarget
     { key: 'diagram', kind: 'diagram', id: 'diagram', label: diagramType ?? 'Diagram', order: 0 },
   ];
   const elements = allElements(root);
-  const nodeElements = elements.filter((element) => element.matches('g.node[id]'));
-  const nodeIds = nodeElements.map((element) => flowNodeId(element.id));
-  nodeElements.forEach((element, index) => {
-    const id = nodeIds[index] ?? flowNodeId(element.id);
+  const nodes = elements
+    .filter((element) => element.matches('g.node[id], g.image-shape[id], g.icon-shape[id]'))
+    .map((element) => ({ element, id: flowNodeId(element.id) }));
+  const nodeIds = nodes.map(({ id }) => id);
+  nodes.forEach(({ element, id }) => {
     const key = `node:${id}`;
     bind([element], key);
     const labelElement = Array.from(
@@ -348,22 +351,26 @@ export function resolveTargetFromElement(
 }
 
 interface OriginalStyle {
+  baseOpacity: number;
   opacity: string;
+  opacityPriority: string;
   filter: string;
+  filterPriority: string;
   pointerEvents: string;
+  pointerEventsPriority: string;
+  animationName: string;
+  animationNamePriority: string;
   animationPlayState: string;
+  animationPlayStatePriority: string;
+  transitionProperty: string;
+  transitionPropertyPriority: string;
 }
 
 const originalStyles = new WeakMap<Element, OriginalStyle>();
+const effectColors = new WeakMap<Element, string>();
 const pausedAnimationRoots = new WeakSet<ParentNode>();
 const managedMotionRoots = new WeakSet<ParentNode>();
-const markerColors = new WeakMap<SVGSVGElement, Map<string, string>>();
 const effectBindingCache = new WeakMap<ParentNode, Map<string, Element[]>>();
-
-interface Point {
-  x: number;
-  y: number;
-}
 
 interface SampledGeometry {
   points: Point[];
@@ -372,21 +379,10 @@ interface SampledGeometry {
   localLength: number;
 }
 
-interface RouteEdgeSection {
-  key: string;
-  pathData: string;
-  points: Point[];
-  distances: number[];
-  startDistance: number;
-  endDistance: number;
-  length: number;
-}
-
 interface RoutePlan {
   points: Point[];
   distances: number[];
   length: number;
-  edges: RouteEdgeSection[];
 }
 
 type MeasurableGeometry = SVGGraphicsElement & {
@@ -400,16 +396,15 @@ interface MarkerVisual {
   halo: SVGCircleElement;
   core: SVGCircleElement;
   arrival: SVGCircleElement;
-  comets: [SVGPathElement, SVGPathElement, SVGPathElement];
-  wakes: [SVGPathElement, SVGPathElement];
+  tails: [SVGPathElement, SVGPathElement];
+  routeKey: string;
+  incarnation: number;
   label?: {
     group: SVGGElement;
     leader: SVGLineElement;
     background: SVGRectElement;
     text: SVGTextElement;
   };
-  occupancy?: SVGGraphicsElement;
-  occupancyKey?: string;
 }
 
 interface TraceVisual {
@@ -419,34 +414,51 @@ interface TraceVisual {
 
 interface OverlayScene {
   root: SVGGElement;
+  traceLayer: SVGGElement;
+  markerLayer: SVGGElement;
   markers: Map<string, MarkerVisual>;
   traces: Map<string, TraceVisual>;
   traceCaps: Map<string, SVGCircleElement>;
+  traceGroups: Map<string, SVGGElement>;
 }
 
 const sampledGeometryCache = new WeakMap<SVGGraphicsElement, SampledGeometry>();
+const bindingCenterCache = new WeakMap<SVGSVGElement, Map<string, Point>>();
 const routePlanCache = new WeakMap<SVGSVGElement, Map<string, RoutePlan>>();
 const overlayScenes = new WeakMap<SVGSVGElement, OverlayScene>();
 const calloutObstacleCache = new WeakMap<SVGSVGElement, Bounds[]>();
-
-interface Bounds {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
+const backdropColors = new WeakMap<SVGSVGElement, RgbColor>();
 
 function saveOriginalStyle(element: Element): OriginalStyle | undefined {
   if (typeof SVGElement === 'undefined' || !(element instanceof SVGElement)) return undefined;
   const styled = element;
   const saved = originalStyles.get(element) ?? {
+    baseOpacity: 1,
     opacity: styled.style.opacity,
+    opacityPriority: styled.style.getPropertyPriority('opacity'),
     filter: styled.style.filter,
+    filterPriority: styled.style.getPropertyPriority('filter'),
     pointerEvents: styled.style.pointerEvents,
+    pointerEventsPriority: styled.style.getPropertyPriority('pointer-events'),
+    animationName: styled.style.animationName,
+    animationNamePriority: styled.style.getPropertyPriority('animation-name'),
     animationPlayState: styled.style.animationPlayState,
+    animationPlayStatePriority: styled.style.getPropertyPriority('animation-play-state'),
+    transitionProperty: styled.style.transitionProperty,
+    transitionPropertyPriority: styled.style.getPropertyPriority('transition-property'),
   };
   originalStyles.set(element, saved);
   return saved;
+}
+
+function restoreInlineStyle(
+  style: CSSStyleDeclaration,
+  property: string,
+  value: string,
+  priority: string,
+): void {
+  if (value) style.setProperty(property, value, priority);
+  else style.removeProperty(property);
 }
 
 function pauseNativeAnimations(root: ParentNode): void {
@@ -454,23 +466,38 @@ function pauseNativeAnimations(root: ParentNode): void {
   if (pausedAnimationRoots.has(animationRoot)) return;
   for (const element of allElements(animationRoot)) {
     if (typeof SVGElement === 'undefined' || !(element instanceof SVGElement)) continue;
-    const computed =
-      typeof getComputedStyle === 'undefined' ? undefined : getComputedStyle(element);
-    if (element.style.animation || (computed?.animationName && computed.animationName !== 'none')) {
-      saveOriginalStyle(element);
-      element.style.animationPlayState = 'paused';
-    }
+    saveOriginalStyle(element);
+    // Only override the longhands that activate native interpolation. Assigning the shorthands
+    // would erase authored inline duration/delay/timing longhands and make clearMotionFromSvg
+    // unable to restore the Mermaid SVG byte-for-byte.
+    element.style.setProperty('animation-name', 'none', 'important');
+    element.style.setProperty('animation-play-state', 'paused', 'important');
+    element.style.setProperty('transition-property', 'none', 'important');
+    const saved = originalStyles.get(element);
+    const opacity =
+      typeof getComputedStyle === 'undefined'
+        ? 1
+        : Number.parseFloat(getComputedStyle(element).opacity);
+    if (saved) saved.baseOpacity = Number.isFinite(opacity) ? opacity : 1;
   }
   pausedAnimationRoots.add(animationRoot);
 }
 
 function effectColor(element: Element): string {
   if (typeof getComputedStyle === 'undefined') return 'currentColor';
+  const cached = effectColors.get(element);
+  if (cached) return cached;
   const computed = getComputedStyle(element);
-  if (computed.stroke && computed.stroke !== 'none' && computed.stroke !== 'transparent')
-    return computed.stroke;
-  if (computed.color && computed.color !== 'transparent') return computed.color;
-  return computed.fill && computed.fill !== 'none' ? computed.fill : 'currentColor';
+  const color =
+    computed.stroke && computed.stroke !== 'none' && computed.stroke !== 'transparent'
+      ? computed.stroke
+      : computed.color && computed.color !== 'transparent'
+        ? computed.color
+        : computed.fill && computed.fill !== 'none'
+          ? computed.fill
+          : 'currentColor';
+  effectColors.set(element, color);
+  return color;
 }
 
 interface RgbColor {
@@ -527,13 +554,20 @@ function contrast(left: RgbColor, right: RgbColor): number {
 }
 
 function backdropColor(svg: SVGSVGElement): RgbColor {
+  const cached = backdropColors.get(svg);
+  if (cached) return cached;
   let current: Element | null = svg;
   while (current) {
     const color = parseRgbColor(getComputedStyle(current).backgroundColor);
-    if (color) return color;
+    if (color) {
+      backdropColors.set(svg, color);
+      return color;
+    }
     current = current.parentElement;
   }
-  return { red: 13, green: 23, blue: 21 };
+  const fallback = { red: 13, green: 23, blue: 21 };
+  backdropColors.set(svg, fallback);
+  return fallback;
 }
 
 function readableMotionColor(svg: SVGSVGElement, preferred: string): string {
@@ -588,44 +622,6 @@ function isMeasurableGeometry(element: Node | undefined): element is MeasurableG
     'getPointAtLength' in element &&
     typeof element.getPointAtLength === 'function'
   );
-}
-
-function finitePoint(point: Point): Point | undefined {
-  return Number.isFinite(point.x) && Number.isFinite(point.y) ? point : undefined;
-}
-
-function pointInSvgSpace(
-  svg: SVGSVGElement,
-  source: SVGGraphicsElement,
-  sourcePoint: Point,
-): Point | undefined {
-  try {
-    const sourceMatrix = source.getScreenCTM();
-    const svgMatrix = svg.getScreenCTM();
-    if (!sourceMatrix || !svgMatrix) return undefined;
-    const point = svg.createSVGPoint();
-    point.x = sourcePoint.x;
-    point.y = sourcePoint.y;
-    const screenPoint = point.matrixTransform(sourceMatrix);
-    const localPoint = screenPoint.matrixTransform(svgMatrix.inverse());
-    return finitePoint({ x: localPoint.x, y: localPoint.y });
-  } catch {
-    return undefined;
-  }
-}
-
-function relativeMatrix(svg: SVGSVGElement, source: SVGGraphicsElement): DOMMatrix | undefined {
-  try {
-    const sourceMatrix = source.getScreenCTM();
-    const svgMatrix = svg.getScreenCTM();
-    if (!sourceMatrix || !svgMatrix) return undefined;
-    const matrix = svgMatrix.inverse().multiply(sourceMatrix);
-    return [matrix.a, matrix.b, matrix.c, matrix.d, matrix.e, matrix.f].every(Number.isFinite)
-      ? matrix
-      : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 function targetCenter(svg: SVGSVGElement, element: Element | undefined): Point | undefined {
@@ -706,13 +702,19 @@ function bindingCenter(
   key: string | undefined,
 ): Point | undefined {
   if (!key) return undefined;
+  const cache = bindingCenterCache.get(svg) ?? new Map<string, Point>();
+  bindingCenterCache.set(svg, cache);
+  const cached = cache.get(key);
+  if (cached) return cached;
   const element = bindings
     .get(key)
     ?.find(
       (candidate) =>
         typeof SVGGraphicsElement !== 'undefined' && candidate instanceof SVGGraphicsElement,
     );
-  return targetCenter(svg, element);
+  const center = targetCenter(svg, element);
+  if (center) cache.set(key, center);
+  return center;
 }
 
 function bindingGeometry(
@@ -738,11 +740,6 @@ function appendDistinct(points: Point[], point: Point): void {
   if (!previous || distance(previous, point) > 0.001) points.push(point);
 }
 
-function appendDistinctIndex(points: Point[], point: Point): number {
-  appendDistinct(points, point);
-  return Math.max(0, points.length - 1);
-}
-
 function coordinate(value: number): string {
   return Number(value.toFixed(3)).toString();
 }
@@ -763,13 +760,11 @@ function buildRoutePlan(
 ): RoutePlan | undefined {
   if (marker.route.length === 1) {
     const point = bindingCenter(svg, bindings, marker.route[0]);
-    return point ? { points: [point], distances: [0], length: 0, edges: [] } : undefined;
+    return point ? { points: [point], distances: [0], length: 0 } : undefined;
   }
   if (marker.edgeKeys.length !== marker.route.length - 1) return undefined;
 
   const points: Point[] = [];
-  const sections: Array<{ key: string; points: Point[]; startIndex: number; endIndex: number }> =
-    [];
   for (let index = 0; index < marker.edgeKeys.length; index += 1) {
     const from = bindingCenter(svg, bindings, marker.route[index]);
     const to = bindingCenter(svg, bindings, marker.route[index + 1]);
@@ -785,28 +780,13 @@ function buildRoutePlan(
     const firstEdgePoint = oriented.points[0];
     const lastEdgePoint = oriented.points[oriented.points.length - 1];
     if (!firstEdgePoint || !lastEdgePoint || !edgeKey) return undefined;
-    const startIndex = appendDistinctIndex(points, firstEdgePoint);
+    appendDistinct(points, firstEdgePoint);
     for (const point of oriented.points.slice(1, -1)) appendDistinct(points, point);
-    const endIndex = appendDistinctIndex(points, lastEdgePoint);
-    sections.push({ key: edgeKey, points: oriented.points, startIndex, endIndex });
+    appendDistinct(points, lastEdgePoint);
     if (!isMessage) appendDistinct(points, to);
   }
   if (points.length === 0) return undefined;
-  const measured = withDistances(points);
-  const edges = sections.map((section) => {
-    const startDistance = measured.distances[section.startIndex] ?? 0;
-    const endDistance = measured.distances[section.endIndex] ?? startDistance;
-    return {
-      key: section.key,
-      pathData: pointsPathData(section.points),
-      points: section.points,
-      distances: withDistances(section.points).distances,
-      startDistance,
-      endDistance,
-      length: Math.max(0, endDistance - startDistance),
-    };
-  });
-  return { ...measured, edges };
+  return withDistances(points);
 }
 
 function upperDistanceIndex(distances: number[], requestedDistance: number): number {
@@ -847,38 +827,6 @@ function pointOnPlan(plan: RoutePlan, progress: number): Point | undefined {
   return pointAtPlanDistance(plan, plan.length * Math.max(0, Math.min(1, progress)));
 }
 
-function pathDataBetween(
-  plan: Pick<RoutePlan, 'points' | 'distances' | 'length'>,
-  startDistance: number,
-  endDistance: number,
-): string {
-  const start = Math.max(0, Math.min(plan.length, startDistance));
-  const end = Math.max(start, Math.min(plan.length, endDistance));
-  const startPoint = pointAtPlanDistance(plan, start);
-  const endPoint = pointAtPlanDistance(plan, end);
-  if (!startPoint || !endPoint) return '';
-  const points = [startPoint];
-  const firstIndex = upperDistanceIndex(plan.distances, start);
-  const lastIndex = upperDistanceIndex(plan.distances, end);
-  for (let index = firstIndex; index <= lastIndex; index += 1) {
-    const measuredDistance = plan.distances[index] ?? 0;
-    const point = plan.points[index];
-    if (point && measuredDistance > start && measuredDistance < end) appendDistinct(points, point);
-  }
-  appendDistinct(points, endPoint);
-  return pointsPathData(points);
-}
-
-function planTangent(plan: RoutePlan, requestedDistance: number, sampleDistance: number): Point {
-  const before = pointAtPlanDistance(plan, requestedDistance - sampleDistance);
-  const after = pointAtPlanDistance(plan, requestedDistance + sampleDistance);
-  if (!before || !after) return { x: 1, y: 0 };
-  const length = distance(before, after);
-  return length <= 0.001
-    ? { x: 1, y: 0 }
-    : { x: (after.x - before.x) / length, y: (after.y - before.y) / length };
-}
-
 function markerPlan(
   svg: SVGSVGElement,
   bindings: Map<string, Element[]>,
@@ -887,7 +835,7 @@ function markerPlan(
 ): RoutePlan | undefined {
   const cache = routePlanCache.get(svg) ?? new Map<string, RoutePlan>();
   routePlanCache.set(svg, cache);
-  const cacheKey = `${marker.route.join('\u0000')}\u0001${marker.edgeKeys.join('\u0000')}`;
+  const cacheKey = markerRouteKey(marker);
   let plan = cache.get(cacheKey);
   if (plan === undefined) {
     plan = buildRoutePlan(svg, bindings, marker, targets);
@@ -896,35 +844,12 @@ function markerPlan(
   return plan;
 }
 
-function screenScale(svg: SVGSVGElement): number {
-  const matrix = svg.getScreenCTM();
-  if (!matrix) return 1;
-  const horizontal = Math.hypot(matrix.a, matrix.b);
-  const vertical = Math.hypot(matrix.c, matrix.d);
-  const scale = Math.sqrt(horizontal * vertical);
-  return Number.isFinite(scale) && scale > 0.001 ? scale : 1;
+function markerRouteKey(marker: FrameMarkerState): string {
+  return `${marker.route.join('\u0000')}\u0001${marker.edgeKeys.join('\u0000')}`;
 }
 
 function elementBounds(svg: SVGSVGElement, element: SVGGraphicsElement): Bounds | undefined {
-  try {
-    const box = element.getBBox();
-    const corners = [
-      { x: box.x, y: box.y },
-      { x: box.x + box.width, y: box.y },
-      { x: box.x, y: box.y + box.height },
-      { x: box.x + box.width, y: box.y + box.height },
-    ]
-      .map((point) => pointInSvgSpace(svg, element, point))
-      .filter((point): point is Point => point !== undefined);
-    if (corners.length !== 4) return undefined;
-    const xs = corners.map(({ x }) => x);
-    const ys = corners.map(({ y }) => y);
-    const x = Math.min(...xs);
-    const y = Math.min(...ys);
-    return { x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y };
-  } catch {
-    return undefined;
-  }
+  return transformedElementBounds(svg, element);
 }
 
 function overlappingArea(left: Bounds, right: Bounds, padding = 0): number {
@@ -973,7 +898,7 @@ function steadyLabelOffset(
 ): { x: number; y: number; width: number; height: number; placement: number } {
   const width = Math.max(42, label.length * 6.7 + 16) * inverseScale;
   const height = 21 * inverseScale;
-  const distanceFromHead = 56 * inverseScale + height / 2;
+  const distanceFromHead = 32 * inverseScale + height / 2;
   const viewBox = svg.viewBox.baseVal;
   const center = { x: viewBox.x + viewBox.width / 2, y: viewBox.y + viewBox.height / 2 };
   const point = placementPoints[0] ?? center;
@@ -1000,7 +925,7 @@ function steadyLabelOffset(
     width: viewBox.width,
     height: viewBox.height,
   };
-  const candidates = [distanceFromHead, distanceFromHead + 18 * inverseScale].flatMap(
+  const candidates = [distanceFromHead, distanceFromHead + 42 * inverseScale].flatMap(
     (radius, distanceIndex) =>
       directions.map((direction, directionIndex) => {
         const magnitude = Math.hypot(direction.x, direction.y) || 1;
@@ -1036,41 +961,33 @@ function steadyLabelOffset(
         };
       }),
   );
-  const selected = candidates.sort((left, right) => left.score - right.score)[0];
-  return selected ?? { x: 0, y: -distanceFromHead, width, height, placement: 0 };
+  return candidates.reduce((selected, candidate) =>
+    candidate.score < selected.score ? candidate : selected,
+  );
 }
 
-function nodeContainingPoint(
-  svg: SVGSVGElement,
-  bindings: Map<string, Element[]>,
-  marker: FrameMarkerState,
-  point: Point,
-): { key: string; shape: SVGGraphicsElement } | undefined {
-  for (const key of marker.route) {
-    const root = bindings
-      .get(key)
-      ?.find(
-        (candidate): candidate is SVGGraphicsElement =>
-          typeof SVGGraphicsElement !== 'undefined' && candidate instanceof SVGGraphicsElement,
-      );
-    if (!root) continue;
-    const bounds = elementBounds(svg, root);
-    if (
-      !bounds ||
-      point.x < bounds.x ||
-      point.x > bounds.x + bounds.width ||
-      point.y < bounds.y ||
-      point.y > bounds.y + bounds.height
-    )
-      continue;
-    const shape = root.matches('rect, circle, ellipse, polygon, path')
-      ? root
-      : root.querySelector<SVGGraphicsElement>(
-          ':scope > rect, :scope > circle, :scope > ellipse, :scope > polygon, :scope > path',
-        );
-    if (shape) return { key, shape };
+function routeLabelTangent(plan: RoutePlan): Point {
+  const first = plan.points[0];
+  const last = plan.points[plan.points.length - 1];
+  if (!first || !last) return { x: 1, y: 0 };
+  const delta = { x: last.x - first.x, y: last.y - first.y };
+  if (Math.hypot(delta.x, delta.y) > Math.max(1, plan.length * 0.08)) {
+    const magnitude = Math.hypot(delta.x, delta.y);
+    return { x: delta.x / magnitude, y: delta.y / magnitude };
   }
-  return undefined;
+  const xs = plan.points.map(({ x }) => x);
+  const ys = plan.points.map(({ y }) => y);
+  return Math.max(...xs) - Math.min(...xs) >= Math.max(...ys) - Math.min(...ys)
+    ? { x: 1, y: 0 }
+    : { x: 0, y: 1 };
+}
+
+function routeLabelPlacementPoints(plan: RoutePlan): Point[] {
+  const anchor = pointAtPlanDistance(plan, plan.length / 2) ?? plan.points[0];
+  const samples = Array.from({ length: 9 }, (_, index) =>
+    pointAtPlanDistance(plan, (plan.length * index) / 8),
+  ).filter((point): point is Point => point !== undefined);
+  return anchor ? [anchor, ...samples] : samples;
 }
 
 function ensureOverlayScene(svg: SVGSVGElement): OverlayScene {
@@ -1079,26 +996,75 @@ function ensureOverlayScene(svg: SVGSVGElement): OverlayScene {
   svg.querySelector('[data-mermotion-overlay]')?.remove();
   const root = document.createElementNS(SVG_NAMESPACE, 'g');
   root.setAttribute('data-mermotion-overlay', 'true');
-  root.setAttribute('pointer-events', 'none');
+  setOverlayPresentation(root, 'pointer-events', 'none');
+  setOverlayPresentation(root, 'visibility', 'visible');
+  setOverlayPresentation(root, 'display', 'inline');
+  setOverlayPresentation(root, 'opacity', '1');
+  setOverlayPresentation(root, 'transform', 'none');
+  const traceLayer = document.createElementNS(SVG_NAMESPACE, 'g');
+  traceLayer.setAttribute('data-mermotion-layer', 'traces');
+  setOverlayPresentation(traceLayer, 'visibility', 'visible');
+  setOverlayPresentation(traceLayer, 'pointer-events', 'none');
+  setOverlayPresentation(traceLayer, 'opacity', '1');
+  setOverlayPresentation(traceLayer, 'transform', 'none');
+  const markerLayer = document.createElementNS(SVG_NAMESPACE, 'g');
+  markerLayer.setAttribute('data-mermotion-layer', 'markers');
+  setOverlayPresentation(markerLayer, 'visibility', 'visible');
+  setOverlayPresentation(markerLayer, 'pointer-events', 'none');
+  setOverlayPresentation(markerLayer, 'opacity', '1');
+  setOverlayPresentation(markerLayer, 'transform', 'none');
+  root.append(traceLayer, markerLayer);
   svg.append(root);
   const scene: OverlayScene = {
     root,
+    traceLayer,
+    markerLayer,
     markers: new Map(),
     traces: new Map(),
     traceCaps: new Map(),
+    traceGroups: new Map(),
   };
   overlayScenes.set(svg, scene);
   return scene;
 }
 
+function setOverlayPresentation(element: SVGElement, property: string, value: string): void {
+  element.style.setProperty('display', 'inline', 'important');
+  element.style.setProperty('pointer-events', 'none', 'important');
+  element.style.setProperty('transition', 'none', 'important');
+  element.style.setProperty('animation', 'none', 'important');
+  element.style.setProperty('filter', 'none', 'important');
+  element.style.setProperty('clip-path', 'none', 'important');
+  element.style.setProperty('mask', 'none', 'important');
+  element.style.setProperty('color', 'inherit', 'important');
+  element.setAttribute(property, value);
+  element.style.setProperty(property, value, 'important');
+}
+
+function orderOverlayChildren(parent: SVGGElement, ordered: SVGElement[]): void {
+  let cursor = parent.firstElementChild;
+  for (const element of ordered) {
+    if (cursor === element) {
+      cursor = cursor.nextElementSibling;
+      continue;
+    }
+    parent.insertBefore(element, cursor);
+  }
+}
+
 function styledPath(attribute: string, value: string): SVGPathElement {
   const path = document.createElementNS(SVG_NAMESPACE, 'path');
   path.setAttribute(attribute, value);
-  path.setAttribute('fill', 'none');
-  path.setAttribute('stroke', 'currentColor');
-  path.setAttribute('stroke-linecap', 'round');
-  path.setAttribute('stroke-linejoin', 'round');
-  path.setAttribute('vector-effect', 'non-scaling-stroke');
+  setOverlayPresentation(path, 'fill', 'none');
+  setOverlayPresentation(path, 'stroke', 'currentColor');
+  setOverlayPresentation(path, 'stroke-opacity', '1');
+  setOverlayPresentation(path, 'stroke-linecap', 'round');
+  setOverlayPresentation(path, 'stroke-linejoin', 'round');
+  setOverlayPresentation(path, 'vector-effect', 'none');
+  setOverlayPresentation(path, 'pointer-events', 'none');
+  setOverlayPresentation(path, 'display', 'inline');
+  setOverlayPresentation(path, 'transform', 'none');
+  setOverlayPresentation(path, 'visibility', 'visible');
   return path;
 }
 
@@ -1106,97 +1072,137 @@ function createMarkerVisual(
   scene: OverlayScene,
   marker: FrameMarkerState,
   color: string,
+  plan: RoutePlan,
+  routeKey: string,
 ): MarkerVisual {
   const root = document.createElementNS(SVG_NAMESPACE, 'g');
   root.setAttribute('data-mermotion-marker-decoration', marker.id);
-  root.setAttribute('color', color);
+  setOverlayPresentation(root, 'color', color);
+  setOverlayPresentation(root, 'pointer-events', 'none');
+  setOverlayPresentation(root, 'visibility', 'visible');
+  setOverlayPresentation(root, 'display', 'inline');
+  setOverlayPresentation(root, 'opacity', '1');
+  setOverlayPresentation(root, 'transform', 'none');
 
-  const cometGlow = styledPath('data-mermotion-comet', 'glow');
-  cometGlow.setAttribute('stroke-width', '8');
-  cometGlow.setAttribute('opacity', '0.1');
-  const cometBody = styledPath('data-mermotion-comet', 'body');
-  cometBody.setAttribute('stroke-width', '4');
-  cometBody.setAttribute('opacity', '0.24');
-  const cometCore = styledPath('data-mermotion-comet', 'core');
-  cometCore.setAttribute('stroke-width', '1.8');
-  cometCore.setAttribute('opacity', '0.84');
-
-  const wakeGlow = styledPath('data-mermotion-wake', 'glow');
-  wakeGlow.setAttribute('stroke-width', '7');
-  wakeGlow.setAttribute('opacity', '0.1');
-  const wakeCore = styledPath('data-mermotion-wake', 'core');
-  wakeCore.setAttribute('stroke-width', '2.8');
-  wakeCore.setAttribute('opacity', '0.68');
+  const routePathData = pointsPathData(plan.points);
+  const tailSoft = styledPath('data-mermotion-tail', 'soft');
+  tailSoft.setAttribute('d', routePathData);
+  tailSoft.setAttribute('pathLength', '1');
+  setOverlayPresentation(tailSoft, 'stroke-width', '6');
+  setOverlayPresentation(tailSoft, 'stroke-linecap', 'butt');
+  setOverlayPresentation(tailSoft, 'stroke-dasharray', '0 0 0 1');
+  setOverlayPresentation(tailSoft, 'stroke-dashoffset', '0');
+  setOverlayPresentation(tailSoft, 'opacity', '0');
+  const tailCore = styledPath('data-mermotion-tail', 'core');
+  tailCore.setAttribute('d', routePathData);
+  tailCore.setAttribute('pathLength', '1');
+  setOverlayPresentation(tailCore, 'stroke-width', '2.2');
+  setOverlayPresentation(tailCore, 'stroke-linecap', 'butt');
+  setOverlayPresentation(tailCore, 'stroke-dasharray', '0 0 0 1');
+  setOverlayPresentation(tailCore, 'stroke-dashoffset', '0');
+  setOverlayPresentation(tailCore, 'opacity', '0');
 
   const arrival = document.createElementNS(SVG_NAMESPACE, 'circle');
   arrival.setAttribute('data-mermotion-arrival', '');
-  arrival.setAttribute('fill', 'none');
-  arrival.setAttribute('stroke', 'currentColor');
-  arrival.setAttribute('stroke-width', '1.8');
-  arrival.setAttribute('vector-effect', 'non-scaling-stroke');
-  arrival.setAttribute('visibility', 'hidden');
-  arrival.setAttribute('opacity', '0');
+  setOverlayPresentation(arrival, 'fill', 'none');
+  setOverlayPresentation(arrival, 'stroke', 'currentColor');
+  setOverlayPresentation(arrival, 'stroke-opacity', '1');
+  setOverlayPresentation(arrival, 'stroke-width', '1.8');
+  setOverlayPresentation(arrival, 'vector-effect', 'non-scaling-stroke');
+  setOverlayPresentation(arrival, 'visibility', 'hidden');
+  setOverlayPresentation(arrival, 'opacity', '0');
+  setOverlayPresentation(arrival, 'display', 'inline');
+  setOverlayPresentation(arrival, 'transform', 'none');
   arrival.setAttribute('data-arrival-progress', '0');
 
   const head = document.createElementNS(SVG_NAMESPACE, 'g');
   head.setAttribute('data-marker-id', marker.id);
   head.setAttribute('data-marker-label', marker.label);
   head.setAttribute('data-marker-phase', marker.phase);
+  setOverlayPresentation(head, 'pointer-events', 'none');
+  setOverlayPresentation(head, 'visibility', 'visible');
+  setOverlayPresentation(head, 'opacity', '1');
+  setOverlayPresentation(head, 'display', 'inline');
 
   const halo = document.createElementNS(SVG_NAMESPACE, 'circle');
   halo.setAttribute('data-mermotion-marker-halo', '');
-  halo.setAttribute('fill', 'currentColor');
-  halo.setAttribute('opacity', '0.14');
+  setOverlayPresentation(halo, 'fill', 'currentColor');
+  setOverlayPresentation(halo, 'fill-opacity', '1');
+  setOverlayPresentation(halo, 'opacity', '0.14');
+  setOverlayPresentation(halo, 'display', 'inline');
+  setOverlayPresentation(halo, 'transform', 'none');
   head.append(halo);
 
   const core = document.createElementNS(SVG_NAMESPACE, 'circle');
   core.setAttribute('data-mermotion-marker-core', '');
-  core.setAttribute('fill', 'currentColor');
-  core.setAttribute('stroke', '#ecfdf5');
-  core.setAttribute('stroke-width', '1.35');
-  core.setAttribute('vector-effect', 'non-scaling-stroke');
+  setOverlayPresentation(core, 'fill', 'currentColor');
+  setOverlayPresentation(core, 'fill-opacity', '1');
+  setOverlayPresentation(core, 'stroke', '#ecfdf5');
+  setOverlayPresentation(core, 'stroke-opacity', '1');
+  setOverlayPresentation(core, 'stroke-width', '1.35');
+  setOverlayPresentation(core, 'vector-effect', 'non-scaling-stroke');
+  setOverlayPresentation(core, 'display', 'inline');
+  setOverlayPresentation(core, 'opacity', '1');
+  setOverlayPresentation(core, 'transform', 'none');
   head.append(core);
 
   let labelVisual: MarkerVisual['label'];
   if (marker.label) {
     const labelGroup = document.createElementNS(SVG_NAMESPACE, 'g');
     labelGroup.setAttribute('data-mermotion-marker-callout', '');
+    setOverlayPresentation(labelGroup, 'pointer-events', 'none');
+    setOverlayPresentation(labelGroup, 'display', 'inline');
+    setOverlayPresentation(labelGroup, 'visibility', 'visible');
     const leader = document.createElementNS(SVG_NAMESPACE, 'line');
     leader.setAttribute('data-mermotion-marker-leader', '');
-    leader.setAttribute('stroke', 'currentColor');
-    leader.setAttribute('stroke-width', '1');
-    leader.setAttribute('stroke-opacity', '0.58');
-    leader.setAttribute('vector-effect', 'non-scaling-stroke');
+    setOverlayPresentation(leader, 'stroke', 'currentColor');
+    setOverlayPresentation(leader, 'stroke-width', '1');
+    setOverlayPresentation(leader, 'stroke-opacity', '0.58');
+    setOverlayPresentation(leader, 'vector-effect', 'non-scaling-stroke');
+    setOverlayPresentation(leader, 'display', 'inline');
+    setOverlayPresentation(leader, 'transform', 'none');
+    setOverlayPresentation(leader, 'visibility', 'visible');
     const background = document.createElementNS(SVG_NAMESPACE, 'rect');
-    background.setAttribute('fill', '#0d1715');
-    background.setAttribute('stroke', 'currentColor');
-    background.setAttribute('stroke-opacity', '0.56');
-    background.setAttribute('stroke-width', '1');
-    background.setAttribute('vector-effect', 'non-scaling-stroke');
+    setOverlayPresentation(background, 'fill', '#0d1715');
+    setOverlayPresentation(background, 'fill-opacity', '1');
+    setOverlayPresentation(background, 'stroke', 'currentColor');
+    setOverlayPresentation(background, 'stroke-opacity', '0.56');
+    setOverlayPresentation(background, 'stroke-width', '1');
+    setOverlayPresentation(background, 'vector-effect', 'non-scaling-stroke');
+    setOverlayPresentation(background, 'display', 'inline');
+    setOverlayPresentation(background, 'opacity', '1');
+    setOverlayPresentation(background, 'transform', 'none');
+    setOverlayPresentation(background, 'visibility', 'visible');
     const text = document.createElementNS(SVG_NAMESPACE, 'text');
-    text.setAttribute('x', '0');
-    text.setAttribute('y', '0');
-    text.setAttribute('dominant-baseline', 'central');
-    text.setAttribute('text-anchor', 'middle');
-    text.setAttribute('font-family', 'ui-monospace, SFMono-Regular, Menlo, monospace');
-    text.setAttribute('font-weight', '650');
-    text.setAttribute('fill', '#f6fbf9');
+    setOverlayPresentation(text, 'x', '0');
+    setOverlayPresentation(text, 'y', '0');
+    setOverlayPresentation(text, 'dominant-baseline', 'central');
+    setOverlayPresentation(text, 'text-anchor', 'middle');
+    setOverlayPresentation(text, 'font-family', 'ui-monospace, SFMono-Regular, Menlo, monospace');
+    setOverlayPresentation(text, 'font-weight', '650');
+    setOverlayPresentation(text, 'fill', '#f6fbf9');
+    setOverlayPresentation(text, 'fill-opacity', '1');
+    setOverlayPresentation(text, 'display', 'inline');
+    setOverlayPresentation(text, 'opacity', '1');
+    setOverlayPresentation(text, 'transform', 'none');
+    setOverlayPresentation(text, 'visibility', 'visible');
     text.textContent = marker.label;
     labelGroup.append(background, text);
     head.append(leader, labelGroup);
     labelVisual = { group: labelGroup, leader, background, text };
   }
 
-  root.append(wakeGlow, wakeCore, cometGlow, cometBody, cometCore, arrival, head);
-  scene.root.append(root);
+  root.append(tailSoft, tailCore, arrival, head);
+  scene.markerLayer.append(root);
   return {
     root,
     head,
     halo,
     core,
     arrival,
-    comets: [cometGlow, cometBody, cometCore],
-    wakes: [wakeGlow, wakeCore],
+    tails: [tailSoft, tailCore],
+    routeKey,
+    incarnation: marker.incarnation,
     ...(labelVisual ? { label: labelVisual } : {}),
   };
 }
@@ -1208,10 +1214,24 @@ function updateTraces(
   targets: SemanticTarget[],
   frame: FrameState,
   options: ApplyFrameOptions,
+  inverseScale: number,
 ): void {
   const activeKeys = new Set<string>();
   const activeCaps = new Set<string>();
+  const activeTraceIds = new Set<string>();
   frame.traces.forEach((trace) => {
+    activeTraceIds.add(trace.id);
+    let traceGroup = scene.traceGroups.get(trace.id);
+    if (!traceGroup) {
+      traceGroup = document.createElementNS(SVG_NAMESPACE, 'g');
+      traceGroup.setAttribute('data-mermotion-trace-group', trace.id);
+      setOverlayPresentation(traceGroup, 'visibility', 'visible');
+      setOverlayPresentation(traceGroup, 'pointer-events', 'none');
+      setOverlayPresentation(traceGroup, 'opacity', '1');
+      setOverlayPresentation(traceGroup, 'transform', 'none');
+      scene.traceLayer.append(traceGroup);
+      scene.traceGroups.set(trace.id, traceGroup);
+    }
     const entries = trace.targetKeys.flatMap((key, targetIndex) => {
       const source = bindingGeometry(bindings, key);
       const discovered = source ? sampledGeometry(svg, source) : undefined;
@@ -1245,36 +1265,40 @@ function updateTraces(
           const clone = document.createElementNS(SVG_NAMESPACE, 'path');
           if (!isMeasurableGeometry(clone)) return undefined;
           clone.setAttribute('d', pointsPathData(sampled.points));
+          clone.setAttribute('pathLength', '1');
+          setOverlayPresentation(clone, 'fill', 'none');
+          setOverlayPresentation(clone, 'stroke-opacity', '1');
+          setOverlayPresentation(clone, 'stroke-dasharray', '1');
+          setOverlayPresentation(clone, 'stroke-dashoffset', '1');
+          setOverlayPresentation(clone, 'stroke-linecap', 'round');
+          setOverlayPresentation(clone, 'stroke-linejoin', 'round');
+          setOverlayPresentation(clone, 'vector-effect', 'none');
+          setOverlayPresentation(clone, 'pointer-events', 'none');
           if (layer === 'core') {
             clone.setAttribute('data-mermotion-trace', traceKey);
             clone.setAttribute('data-mermotion-trace-source', key);
           } else clone.setAttribute('data-mermotion-trace-layer', 'glow');
-          clone.setAttribute('vector-effect', 'non-scaling-stroke');
-          clone.style.fill = 'none';
-          clone.style.strokeLinecap = 'round';
-          clone.style.strokeLinejoin = 'round';
-          clone.style.pointerEvents = 'none';
           return clone;
         };
         const core = createClone('core');
         const glow = createClone('glow');
         if (!core || !glow) return;
-        core.style.strokeWidth = '3';
-        core.style.opacity = '0.92';
-        glow.style.strokeWidth = '7';
-        glow.style.opacity = '0.14';
-        scene.root.prepend(core);
-        scene.root.prepend(glow);
+        setOverlayPresentation(core, 'opacity', '0.92');
+        setOverlayPresentation(glow, 'opacity', '0.14');
+        traceGroup.append(glow, core);
         visual = { core, glow };
         scene.traces.set(traceKey, visual);
       }
-      const sourceColor = effectColor(source);
+      const sourceColor =
+        trace.color && trace.color !== 'inherit' ? undefined : effectColor(source);
       const color =
         trace.color === 'inherit'
-          ? sourceColor
-          : (trace.color ?? readableMotionColor(svg, sourceColor));
-      visual.core.style.stroke = color;
-      visual.glow.style.stroke = color;
+          ? (sourceColor ?? 'currentColor')
+          : (trace.color ?? readableMotionColor(svg, sourceColor ?? 'currentColor'));
+      setOverlayPresentation(visual.core, 'stroke', color);
+      setOverlayPresentation(visual.glow, 'stroke', color);
+      setOverlayPresentation(visual.core, 'stroke-width', coordinate(3 * inverseScale));
+      setOverlayPresentation(visual.glow, 'stroke-width', coordinate(7 * inverseScale));
       const edgeProgress =
         sampled.length <= 0 || totalLength <= 0
           ? 0
@@ -1283,11 +1307,14 @@ function updateTraces(
               Math.min(1, (trace.progress * totalLength - consumedLength) / sampled.length),
             );
       for (const clone of [visual.glow, visual.core]) {
-        clone.style.strokeDasharray = `${sampled.length}`;
-        clone.style.strokeDashoffset = `${sampled.length * (1 - edgeProgress)}`;
+        setOverlayPresentation(clone, 'stroke-dashoffset', coordinate(1 - edgeProgress));
       }
-      visual.glow.setAttribute('visibility', options.reducedMotion ? 'hidden' : 'visible');
-      visual.core.setAttribute('visibility', 'visible');
+      setOverlayPresentation(
+        visual.glow,
+        'visibility',
+        options.reducedMotion ? 'hidden' : 'visible',
+      );
+      setOverlayPresentation(visual.core, 'visibility', 'visible');
       const progressDistance = trace.progress * totalLength;
       if (
         !capPoint &&
@@ -1303,11 +1330,12 @@ function updateTraces(
       const last = entries[entries.length - 1];
       if (last) {
         capPoint = last.sampled.points[last.sampled.points.length - 1];
-        const sourceColor = effectColor(last.source);
+        const sourceColor =
+          trace.color && trace.color !== 'inherit' ? undefined : effectColor(last.source);
         capColor =
           trace.color === 'inherit'
-            ? sourceColor
-            : (trace.color ?? readableMotionColor(svg, sourceColor));
+            ? (sourceColor ?? 'currentColor')
+            : (trace.color ?? readableMotionColor(svg, sourceColor ?? 'currentColor'));
       }
     }
     if (capPoint) {
@@ -1316,16 +1344,22 @@ function updateTraces(
       if (!cap) {
         cap = document.createElementNS(SVG_NAMESPACE, 'circle');
         cap.setAttribute('data-mermotion-trace-cap', trace.id);
-        cap.setAttribute('stroke', 'none');
-        scene.root.append(cap);
+        setOverlayPresentation(cap, 'stroke', 'none');
+        setOverlayPresentation(cap, 'stroke-opacity', '1');
+        setOverlayPresentation(cap, 'pointer-events', 'none');
+        setOverlayPresentation(cap, 'opacity', '1');
+        setOverlayPresentation(cap, 'vector-effect', 'none');
+        setOverlayPresentation(cap, 'display', 'inline');
+        setOverlayPresentation(cap, 'transform', 'none');
+        traceGroup.append(cap);
         scene.traceCaps.set(trace.id, cap);
       }
-      const inverseScale = 1 / screenScale(svg);
-      cap.setAttribute('cx', coordinate(capPoint.x));
-      cap.setAttribute('cy', coordinate(capPoint.y));
-      cap.setAttribute('r', coordinate(2.25 * inverseScale));
-      cap.setAttribute('fill', capColor);
-      cap.setAttribute('visibility', options.reducedMotion ? 'hidden' : 'visible');
+      setOverlayPresentation(cap, 'cx', coordinate(capPoint.x));
+      setOverlayPresentation(cap, 'cy', coordinate(capPoint.y));
+      setOverlayPresentation(cap, 'r', coordinate(2.25 * inverseScale));
+      setOverlayPresentation(cap, 'fill', capColor);
+      setOverlayPresentation(cap, 'fill-opacity', '1');
+      setOverlayPresentation(cap, 'visibility', options.reducedMotion ? 'hidden' : 'visible');
     }
   });
   for (const [key, trace] of scene.traces) {
@@ -1339,6 +1373,18 @@ function updateTraces(
     cap.remove();
     scene.traceCaps.delete(index);
   }
+  for (const [id, group] of scene.traceGroups) {
+    if (activeTraceIds.has(id)) continue;
+    group.remove();
+    scene.traceGroups.delete(id);
+  }
+  orderOverlayChildren(
+    scene.traceLayer,
+    frame.traces.flatMap((trace) => {
+      const group = scene.traceGroups.get(trace.id);
+      return group ? [group] : [];
+    }),
+  );
 }
 
 function updateMarkers(
@@ -1348,6 +1394,7 @@ function updateMarkers(
   targets: SemanticTarget[],
   frame: FrameState,
   options: ApplyFrameOptions,
+  inverseScale: number,
 ): void {
   const activeIds = new Set<string>();
   Object.values(frame.markers).forEach((marker) => {
@@ -1355,177 +1402,108 @@ function updateMarkers(
     const point = plan ? pointOnPlan(plan, marker.routeProgress) : undefined;
     if (!plan || !point) return;
     activeIds.add(marker.id);
-    const colors = markerColors.get(svg) ?? new Map<string, string>();
-    markerColors.set(svg, colors);
+    const colorSourceKey =
+      marker.colorSourceKey ?? marker.edgeKeys[0] ?? marker.route[0] ?? marker.at;
     const markerSource =
-      bindingGeometry(bindings, marker.edgeKeys[0]) ??
-      bindings.get(marker.route[0] ?? marker.at)?.[0];
-    let markerColor =
+      bindingGeometry(bindings, colorSourceKey) ?? bindings.get(colorSourceKey)?.[0];
+    const markerColor =
       marker.color === 'inherit'
         ? markerSource
           ? effectColor(markerSource)
           : readableMotionColor(svg, 'currentColor')
-        : marker.color;
-    if (!markerColor) {
-      markerColor = colors.get(marker.id);
-    }
-    if (!markerColor) {
-      markerColor = markerSource
-        ? readableMotionColor(svg, effectColor(markerSource))
-        : readableMotionColor(svg, 'currentColor');
-      colors.set(marker.id, markerColor);
-    }
+        : (marker.color ??
+          (markerSource
+            ? readableMotionColor(svg, effectColor(markerSource))
+            : readableMotionColor(svg, 'currentColor')));
+    const routeKey = markerRouteKey(marker);
     let visual = scene.markers.get(marker.id);
-    if (visual && visual.head.getAttribute('data-marker-label') !== marker.label) {
+    if (
+      visual &&
+      (visual.head.getAttribute('data-marker-label') !== marker.label ||
+        visual.incarnation !== marker.incarnation)
+    ) {
       visual.root.remove();
       scene.markers.delete(marker.id);
       visual = undefined;
     }
     if (!visual) {
-      visual = createMarkerVisual(scene, marker, markerColor);
+      visual = createMarkerVisual(scene, marker, markerColor, plan, routeKey);
       scene.markers.set(marker.id, visual);
+    } else if (visual.routeKey !== routeKey) {
+      const routePathData = pointsPathData(plan.points);
+      for (const tail of visual.tails) tail.setAttribute('d', routePathData);
+      visual.routeKey = routeKey;
     }
 
-    const scale = screenScale(svg);
-    const inverseScale = 1 / scale;
-    const currentDistance = plan.length * marker.routeProgress;
-    const tangent = planTangent(plan, currentDistance, 5 * inverseScale);
-    const reducedVisibility = options.reducedMotion ? 'hidden' : 'visible';
+    const arrivalProgress = Math.max(0, Math.min(1, marker.arrivalProgress));
+    const arrivalBell = Math.sin(Math.PI * arrivalProgress) ** 2;
+    const arrivalEase = 1 - (1 - arrivalProgress) ** 3;
     const arrivalOpacity =
-      marker.phase === 'arriving' ? Math.max(0, 0.72 * (1 - marker.arrivalProgress)) : 0;
+      marker.phase === 'arriving' && !options.reducedMotion ? 0.42 * arrivalBell : 0;
     const movingOpacity =
       marker.phase === 'moving'
         ? Math.min(1, marker.routeProgress / 0.055)
         : marker.phase === 'arriving'
-          ? Math.max(0, 1 - marker.arrivalProgress * 1.45)
+          ? Math.max(0, 1 - arrivalProgress * arrivalProgress * (3 - 2 * arrivalProgress))
           : 0;
 
-    visual.root.setAttribute('color', markerColor);
-    visual.head.setAttribute(
+    setOverlayPresentation(visual.root, 'color', markerColor);
+    setOverlayPresentation(
+      visual.head,
       'transform',
       `translate(${coordinate(point.x)} ${coordinate(point.y)})`,
     );
     visual.head.setAttribute('data-route-progress', `${marker.routeProgress}`);
     visual.head.setAttribute('data-marker-phase', marker.phase);
-    visual.halo.setAttribute('r', coordinate(8 * inverseScale));
-    visual.core.setAttribute('r', coordinate(4.5 * inverseScale));
+    setOverlayPresentation(visual.halo, 'r', coordinate(8 * inverseScale));
+    setOverlayPresentation(visual.core, 'r', coordinate(4.5 * inverseScale));
 
-    const cometLengths = [44, 28, 14];
-    visual.comets.forEach((comet, index) => {
-      const length = (cometLengths[index] ?? 14) * inverseScale;
-      comet.setAttribute('d', pathDataBetween(plan, currentDistance - length, currentDistance));
-      comet.setAttribute('opacity', coordinate(([0.1, 0.24, 0.84][index] ?? 0.1) * movingOpacity));
-      comet.setAttribute('visibility', reducedVisibility);
-    });
-
-    let activeEdge = plan.edges[0];
-    for (const edge of plan.edges) {
-      if (currentDistance >= edge.startDistance) activeEdge = edge;
-      else break;
-    }
-    if (activeEdge) {
-      const traveled = Math.max(
-        0,
-        Math.min(activeEdge.length, currentDistance - activeEdge.startDistance),
+    const tails = [
+      { element: visual.tails[0], length: 34, opacity: 0.12, width: 6 },
+      { element: visual.tails[1], length: 19, opacity: 0.7, width: 2.2 },
+    ] as const;
+    for (const { element: tail, length, opacity, width } of tails) {
+      const normalizedLength =
+        plan.length <= 0 ? 0 : Math.max(0, Math.min(0.45, (length * inverseScale) / plan.length));
+      const paintedLength = Math.min(normalizedLength, marker.routeProgress);
+      const leadingGap = Math.max(0, marker.routeProgress - paintedLength);
+      const trailingGap = Math.max(0, 1 - marker.routeProgress);
+      setOverlayPresentation(
+        tail,
+        'stroke-dasharray',
+        `0 ${coordinate(leadingGap)} ${coordinate(paintedLength)} ${coordinate(trailingGap)}`,
       );
-      const wakePathData = traveled > 0 ? pathDataBetween(activeEdge, 0, traveled) : '';
-      visual.wakes.forEach((wake, index) => {
-        wake.setAttribute('d', wakePathData);
-        wake.removeAttribute('pathLength');
-        wake.removeAttribute('stroke-dasharray');
-        wake.removeAttribute('stroke-dashoffset');
-        wake.setAttribute(
-          'opacity',
-          coordinate(([0.1, 0.68][index] ?? 0.1) * Math.max(0, movingOpacity)),
-        );
-        wake.setAttribute('visibility', reducedVisibility);
-      });
-    } else {
-      for (const wake of visual.wakes) {
-        wake.setAttribute('d', '');
-        wake.setAttribute('opacity', '0');
-        wake.setAttribute('visibility', reducedVisibility);
-      }
+      setOverlayPresentation(tail, 'stroke-dashoffset', '0');
+      setOverlayPresentation(tail, 'stroke-width', coordinate(width * inverseScale));
+      setOverlayPresentation(
+        tail,
+        'opacity',
+        coordinate(options.reducedMotion ? 0 : opacity * movingOpacity),
+      );
     }
 
-    visual.arrival.setAttribute('cx', coordinate(point.x));
-    visual.arrival.setAttribute('cy', coordinate(point.y));
-    visual.arrival.setAttribute('r', coordinate((10 + marker.arrivalProgress * 20) * inverseScale));
-    visual.arrival.setAttribute('opacity', coordinate(arrivalOpacity));
+    setOverlayPresentation(visual.arrival, 'cx', coordinate(point.x));
+    setOverlayPresentation(visual.arrival, 'cy', coordinate(point.y));
+    setOverlayPresentation(visual.arrival, 'r', coordinate((8 + arrivalEase * 9) * inverseScale));
+    setOverlayPresentation(visual.arrival, 'opacity', coordinate(arrivalOpacity));
     visual.arrival.setAttribute('data-arrival-progress', `${marker.arrivalProgress}`);
-    visual.arrival.setAttribute(
+    setOverlayPresentation(
+      visual.arrival,
       'visibility',
-      !options.reducedMotion && marker.phase === 'arriving' ? 'visible' : 'hidden',
+      !options.reducedMotion && marker.phase === 'arriving' && arrivalOpacity > 0
+        ? 'visible'
+        : 'hidden',
     );
 
-    const occupied = nodeContainingPoint(svg, bindings, marker, point);
-    if (occupied?.key !== visual.occupancyKey) {
-      visual.occupancy?.remove();
-      delete visual.occupancy;
-      delete visual.occupancyKey;
-      if (occupied) {
-        const clone = occupied.shape.cloneNode(true);
-        const matrix = relativeMatrix(svg, occupied.shape);
-        if (clone instanceof SVGGraphicsElement && matrix) {
-          clone.removeAttribute('id');
-          clone.removeAttribute(TARGET_ATTRIBUTE);
-          clone.removeAttribute(EFFECT_ATTRIBUTE);
-          clone.setAttribute('data-mermotion-marker-occupancy', occupied.key);
-          clone.setAttribute(
-            'transform',
-            `matrix(${matrix.a} ${matrix.b} ${matrix.c} ${matrix.d} ${matrix.e} ${matrix.f})`,
-          );
-          clone.setAttribute('vector-effect', 'non-scaling-stroke');
-          clone.style.fill = 'none';
-          clone.style.stroke = 'currentColor';
-          clone.style.strokeWidth = '2';
-          clone.style.opacity = '0.76';
-          clone.style.pointerEvents = 'none';
-          visual.root.insertBefore(clone, visual.arrival);
-          visual.occupancy = clone;
-          visual.occupancyKey = occupied.key;
-        }
-      }
-    }
-    visual.occupancy?.setAttribute('visibility', options.reducedMotion ? 'hidden' : 'visible');
-    if (visual.occupancy) {
-      visual.occupancy.style.strokeWidth =
-        marker.phase === 'arriving' ? `${3.5 - marker.arrivalProgress * 1.5}` : '2';
-      visual.occupancy.style.opacity =
-        marker.phase === 'arriving' ? `${0.92 - marker.arrivalProgress * 0.16}` : '0.76';
-    }
-    visual.core.setAttribute(
-      'visibility',
-      occupied && !options.reducedMotion ? 'hidden' : 'visible',
-    );
-    visual.halo.setAttribute(
-      'visibility',
-      options.reducedMotion || occupied ? 'hidden' : 'visible',
-    );
+    setOverlayPresentation(visual.core, 'visibility', 'visible');
+    setOverlayPresentation(visual.halo, 'visibility', options.reducedMotion ? 'hidden' : 'visible');
 
     if (visual.label) {
-      const labelLanePoint = activeEdge
-        ? (pointAtPlanDistance(plan, (activeEdge.startDistance + activeEdge.endDistance) / 2) ??
-          point)
-        : point;
-      const activeEdgeIndex = activeEdge ? plan.edges.indexOf(activeEdge) : -1;
-      const connection = activeEdge
-        ? targets.find((target) => target.key === activeEdge.key)
-        : undefined;
-      const placementPoints = [
-        labelLanePoint,
-        ...(connection?.kind === 'message' || activeEdgeIndex < 0
-          ? []
-          : [
-              bindingCenter(svg, bindings, marker.route[activeEdgeIndex]),
-              bindingCenter(svg, bindings, marker.route[activeEdgeIndex + 1]),
-            ].filter((candidate): candidate is Point => candidate !== undefined)),
-      ];
       const callout = steadyLabelOffset(
         svg,
         bindings,
-        placementPoints,
-        tangent,
+        routeLabelPlacementPoints(plan),
+        routeLabelTangent(plan),
         marker.label,
         inverseScale,
       );
@@ -1534,23 +1512,32 @@ function updateMarkers(
       const direction = { x: callout.x / magnitude, y: callout.y / magnitude };
       const lineStart = 6.5 * inverseScale;
       const lineEnd = Math.max(lineStart, magnitude - Math.min(callout.width, callout.height) / 2);
-      visual.label.leader.setAttribute('x1', coordinate(direction.x * lineStart));
-      visual.label.leader.setAttribute('y1', coordinate(direction.y * lineStart));
-      visual.label.leader.setAttribute('x2', coordinate(direction.x * lineEnd));
-      visual.label.leader.setAttribute('y2', coordinate(direction.y * lineEnd));
-      visual.label.group.setAttribute(
+      setOverlayPresentation(visual.label.leader, 'x1', coordinate(direction.x * lineStart));
+      setOverlayPresentation(visual.label.leader, 'y1', coordinate(direction.y * lineStart));
+      setOverlayPresentation(visual.label.leader, 'x2', coordinate(direction.x * lineEnd));
+      setOverlayPresentation(visual.label.leader, 'y2', coordinate(direction.y * lineEnd));
+      setOverlayPresentation(
+        visual.label.group,
         'transform',
         `translate(${coordinate(callout.x)} ${coordinate(callout.y)}) scale(${coordinate(inverseScale)})`,
       );
-      visual.label.group.setAttribute('opacity', coordinate(calloutOpacity));
+      setOverlayPresentation(visual.label.group, 'opacity', coordinate(calloutOpacity));
       visual.label.group.setAttribute('data-callout-placement', `${callout.placement}`);
-      visual.label.leader.setAttribute('opacity', coordinate(calloutOpacity));
-      visual.label.background.setAttribute('x', coordinate(-callout.width / inverseScale / 2));
-      visual.label.background.setAttribute('y', '-10.5');
-      visual.label.background.setAttribute('width', coordinate(callout.width / inverseScale));
-      visual.label.background.setAttribute('height', '21');
-      visual.label.background.setAttribute('rx', '5');
-      visual.label.text.setAttribute('font-size', '11');
+      setOverlayPresentation(visual.label.leader, 'opacity', coordinate(calloutOpacity));
+      setOverlayPresentation(
+        visual.label.background,
+        'x',
+        coordinate(-callout.width / inverseScale / 2),
+      );
+      setOverlayPresentation(visual.label.background, 'y', '-10.5');
+      setOverlayPresentation(
+        visual.label.background,
+        'width',
+        coordinate(callout.width / inverseScale),
+      );
+      setOverlayPresentation(visual.label.background, 'height', '21');
+      setOverlayPresentation(visual.label.background, 'rx', '5');
+      setOverlayPresentation(visual.label.text, 'font-size', '11');
     }
   });
   for (const [id, visual] of scene.markers) {
@@ -1558,6 +1545,13 @@ function updateMarkers(
     visual.root.remove();
     scene.markers.delete(id);
   }
+  orderOverlayChildren(
+    scene.markerLayer,
+    Object.values(frame.markers).flatMap((marker) => {
+      const visual = scene.markers.get(marker.id);
+      return visual ? [visual.root] : [];
+    }),
+  );
 }
 
 function redrawOverlay(
@@ -1574,8 +1568,9 @@ function redrawOverlay(
     return;
   }
   const scene = ensureOverlayScene(svg);
-  updateTraces(scene, svg, bindings, targets, frame, options);
-  updateMarkers(scene, svg, bindings, targets, frame, options);
+  const inverseScale = 1 / screenScale(svg);
+  updateTraces(scene, svg, bindings, targets, frame, options, inverseScale);
+  updateMarkers(scene, svg, bindings, targets, frame, options, inverseScale);
 }
 
 function isNoMotionFrame(frame: FrameState): boolean {
@@ -1611,35 +1606,87 @@ export function applyFrameToSvg(
       const saved = saveOriginalStyle(element);
       if (!saved || typeof SVGElement === 'undefined' || !(element instanceof SVGElement)) continue;
       const styled = element;
-      styled.style.opacity = state ? `${state.opacity}` : saved.opacity;
-      styled.style.pointerEvents = state && !state.visible ? 'none' : saved.pointerEvents;
+      if (state?.opacityControlled) {
+        styled.style.setProperty('opacity', `${saved.baseOpacity * state.opacity}`, 'important');
+      } else restoreInlineStyle(styled.style, 'opacity', saved.opacity, saved.opacityPriority);
+      if (state && !state.visible) {
+        styled.style.setProperty('pointer-events', 'none', 'important');
+      } else {
+        restoreInlineStyle(
+          styled.style,
+          'pointer-events',
+          saved.pointerEvents,
+          saved.pointerEventsPriority,
+        );
+      }
       const effect = state ? Math.max(state.highlight, state.pulse) : 0;
       if (effect > 0.001) {
-        const inheritedColor = effectColor(element);
         const color =
-          state?.color === 'inherit'
-            ? inheritedColor
-            : (state?.color ?? (svg ? readableMotionColor(svg, inheritedColor) : inheritedColor));
-        styled.style.filter =
+          state?.color && state.color !== 'inherit'
+            ? state.color
+            : (() => {
+                const inheritedColor = effectColor(element);
+                return state?.color === 'inherit' || !svg
+                  ? inheritedColor
+                  : readableMotionColor(svg, inheritedColor);
+              })();
+        const filter =
           state && state.pulse > state.highlight
             ? `drop-shadow(0 0 ${1 + state.pulse * 2}px ${color}) drop-shadow(0 0 ${3 + state.pulse * 5}px ${color})`
             : `drop-shadow(0 0 ${1 + effect * 2.5}px ${color})`;
-      } else styled.style.filter = saved.filter;
+        styled.style.setProperty('filter', filter, 'important');
+      } else restoreInlineStyle(styled.style, 'filter', saved.filter, saved.filterPriority);
     }
   }
   if (svg) redrawOverlay(svg, bindings, targets, frame, options);
 }
 
 export function clearMotionFromSvg(root: ParentNode): void {
+  const styledElements: Array<{ element: SVGElement; saved: OriginalStyle }> = [];
   for (const element of allElements(root)) {
     const saved = originalStyles.get(element);
     if (saved && typeof SVGElement !== 'undefined' && element instanceof SVGElement) {
       const styled = element;
-      styled.style.opacity = saved.opacity;
-      styled.style.filter = saved.filter;
-      styled.style.pointerEvents = saved.pointerEvents;
-      styled.style.animationPlayState = saved.animationPlayState;
+      restoreInlineStyle(styled.style, 'opacity', saved.opacity, saved.opacityPriority);
+      restoreInlineStyle(styled.style, 'filter', saved.filter, saved.filterPriority);
+      restoreInlineStyle(
+        styled.style,
+        'pointer-events',
+        saved.pointerEvents,
+        saved.pointerEventsPriority,
+      );
+      styledElements.push({ element: styled, saved });
     }
+  }
+
+  // Commit the source-owned visual values while transitions and animations are still neutralized.
+  // Restoring the authored transition first would tween from the last sampled frame back to Mermaid
+  // over several seconds, which makes deleting the final cue visibly nondeterministic.
+  if (typeof getComputedStyle !== 'undefined') {
+    for (const { element } of styledElements) void getComputedStyle(element).opacity;
+  }
+
+  for (const { element: styled, saved } of styledElements) {
+    restoreInlineStyle(
+      styled.style,
+      'animation-name',
+      saved.animationName,
+      saved.animationNamePriority,
+    );
+    restoreInlineStyle(
+      styled.style,
+      'animation-play-state',
+      saved.animationPlayState,
+      saved.animationPlayStatePriority,
+    );
+    restoreInlineStyle(
+      styled.style,
+      'transition-property',
+      saved.transitionProperty,
+      saved.transitionPropertyPriority,
+    );
+    originalStyles.delete(styled);
+    effectColors.delete(styled);
   }
   root.querySelector('[data-mermotion-overlay]')?.remove();
   const svg = svgRoot(root);

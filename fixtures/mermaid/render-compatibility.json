@@ -1,0 +1,203 @@
+{
+  "schemaVersion": 1,
+  "fixtures": [
+    {
+      "family": "architecture",
+      "syntax": "architecture-beta",
+      "file": "render/architecture.mmd",
+      "status": "provisional"
+    },
+    {
+      "family": "block",
+      "syntax": "block",
+      "file": "render/block.mmd",
+      "status": "stable"
+    },
+    {
+      "family": "c4",
+      "syntax": "C4Context",
+      "file": "render/c4.mmd",
+      "status": "provisional"
+    },
+    {
+      "family": "class",
+      "syntax": "classDiagram",
+      "file": "render/class.mmd",
+      "status": "stable"
+    },
+    {
+      "family": "cynefin",
+      "syntax": "cynefin-beta",
+      "file": "render/cynefin.mmd",
+      "status": "provisional"
+    },
+    {
+      "family": "entity relationship",
+      "syntax": "erDiagram",
+      "file": "render/entity-relationship.mmd",
+      "status": "stable"
+    },
+    {
+      "family": "event modeling",
+      "syntax": "eventmodeling",
+      "file": "render/event-modeling.mmd",
+      "status": "stable"
+    },
+    {
+      "family": "flowchart",
+      "syntax": "flowchart",
+      "file": "render/flowchart.mmd",
+      "status": "stable"
+    },
+    {
+      "family": "gantt",
+      "syntax": "gantt",
+      "file": "render/gantt.mmd",
+      "status": "stable"
+    },
+    {
+      "family": "git graph",
+      "syntax": "gitGraph",
+      "file": "render/git-graph.mmd",
+      "status": "stable"
+    },
+    {
+      "family": "ishikawa",
+      "syntax": "ishikawa-beta",
+      "file": "render/ishikawa.mmd",
+      "status": "provisional"
+    },
+    {
+      "family": "kanban",
+      "syntax": "kanban",
+      "file": "render/kanban.mmd",
+      "status": "stable"
+    },
+    {
+      "family": "mindmap",
+      "syntax": "mindmap",
+      "file": "render/mindmap.mmd",
+      "status": "provisional"
+    },
+    {
+      "family": "packet",
+      "syntax": "packet",
+      "file": "render/packet.mmd",
+      "status": "stable"
+    },
+    {
+      "family": "pie",
+      "syntax": "pie",
+      "file": "render/pie.mmd",
+      "status": "stable"
+    },
+    {
+      "family": "quadrant",
+      "syntax": "quadrantChart",
+      "file": "render/quadrant.mmd",
+      "status": "stable"
+    },
+    {
+      "family": "radar",
+      "syntax": "radar-beta",
+      "file": "render/radar.mmd",
+      "status": "provisional"
+    },
+    {
+      "family": "railroad",
+      "syntax": "railroad-beta",
+      "file": "render/railroad-ir.mmd",
+      "status": "provisional"
+    },
+    {
+      "family": "railroad",
+      "syntax": "railroad-ebnf-beta",
+      "file": "render/railroad-ebnf.mmd",
+      "status": "provisional"
+    },
+    {
+      "family": "railroad",
+      "syntax": "railroad-abnf-beta",
+      "file": "render/railroad-abnf.mmd",
+      "status": "provisional"
+    },
+    {
+      "family": "railroad",
+      "syntax": "railroad-peg-beta",
+      "file": "render/railroad-peg.mmd",
+      "status": "provisional"
+    },
+    {
+      "family": "requirement",
+      "syntax": "requirementDiagram",
+      "file": "render/requirement.mmd",
+      "status": "stable"
+    },
+    {
+      "family": "sankey",
+      "syntax": "sankey",
+      "file": "render/sankey.mmd",
+      "status": "provisional"
+    },
+    {
+      "family": "sequence",
+      "syntax": "sequenceDiagram",
+      "file": "render/sequence.mmd",
+      "status": "stable"
+    },
+    {
+      "family": "state",
+      "syntax": "stateDiagram-v2",
+      "file": "render/state.mmd",
+      "status": "stable"
+    },
+    {
+      "family": "swimlane",
+      "syntax": "swimlane-beta",
+      "file": "render/swimlane.mmd",
+      "status": "provisional"
+    },
+    {
+      "family": "timeline",
+      "syntax": "timeline",
+      "file": "render/timeline.mmd",
+      "status": "provisional"
+    },
+    {
+      "family": "tree view",
+      "syntax": "treeView-beta",
+      "file": "render/tree-view.mmd",
+      "status": "provisional"
+    },
+    {
+      "family": "treemap",
+      "syntax": "treemap-beta",
+      "file": "render/treemap.mmd",
+      "status": "provisional"
+    },
+    {
+      "family": "user journey",
+      "syntax": "journey",
+      "file": "render/user-journey.mmd",
+      "status": "stable"
+    },
+    {
+      "family": "venn",
+      "syntax": "venn-beta",
+      "file": "render/venn.mmd",
+      "status": "provisional"
+    },
+    {
+      "family": "wardley",
+      "syntax": "wardley-beta",
+      "file": "render/wardley.mmd",
+      "status": "provisional"
+    },
+    {
+      "family": "xy chart",
+      "syntax": "xychart",
+      "file": "render/xy-chart.mmd",
+      "status": "stable"
+    }
+  ]
+}

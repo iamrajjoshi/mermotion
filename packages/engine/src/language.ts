@@ -43,6 +43,16 @@ const ARROWS = [
   '-x',
   '-)',
 ];
+const MODIFIERS = new Set(['for', 'over', 'every', 'easing', 'color']);
+const SELECTOR_KEYWORDS = new Set([
+  'diagram',
+  'edge',
+  'edges',
+  'message',
+  'messages',
+  'node',
+  'participant',
+]);
 
 interface LineCursor {
   tokens: MotionToken[];
@@ -182,6 +192,17 @@ export function tokenizeMotion(source: string): {
   const eofSpan = sourceSpan(source, source.length, source.length);
   tokens.push({ kind: 'eof', value: '', raw: '', span: eofSpan });
   return { tokens, diagnostics };
+}
+
+export function formatMotionIdentifier(value: string): string {
+  const [token, eof] = tokenizeMotion(value).tokens;
+  const isSafeWord =
+    token?.kind === 'word' &&
+    token.raw === value &&
+    eof?.kind === 'eof' &&
+    !SELECTOR_KEYWORDS.has(value) &&
+    !MODIFIERS.has(value);
+  return isSafeWord ? value : quote(value);
 }
 
 function splitCstLines(source: string): MotionCstLine[] {
@@ -360,7 +381,7 @@ function parseMessageSelector(cursor: LineCursor): MotionSelector {
       ),
     );
   const text = takeWord(cursor, 'a quoted message label')?.value ?? '';
-  let occurrence = 1;
+  let occurrence: number | undefined;
   if (matchWord(cursor, 'occurrence')) {
     const occurrenceToken = take(cursor);
     if (occurrenceToken?.kind !== 'number' || Number(occurrenceToken.value) < 1) {
@@ -379,31 +400,33 @@ function parseMessageSelector(cursor: LineCursor): MotionSelector {
     to,
     arrow: arrow?.value.replace(/[+-]$/, '') ?? '->>',
     text,
-    occurrence,
+    ...(occurrence === undefined ? {} : { occurrence }),
   };
 }
-
-const MODIFIERS = new Set(['for', 'over', 'every', 'easing', 'color']);
 
 function parseSelector(cursor: LineCursor): MotionSelector {
   const first = current(cursor);
   if (!first) return { kind: 'diagram' };
-  if (first.value === 'diagram') {
+  const isKeyword = first.kind === 'word';
+  if (isKeyword && first.value === 'diagram') {
     take(cursor);
     return { kind: 'diagram' };
   }
-  if (first.value === 'messages') {
+  if (isKeyword && first.value === 'messages') {
     take(cursor);
     return { kind: 'allMessages' };
   }
-  if (first.value === 'message') {
+  if (isKeyword && first.value === 'message') {
     take(cursor);
     return parseMessageSelector(cursor);
   }
-  if (first.value === 'edges') {
+  if (isKeyword && first.value === 'edges') {
     take(cursor);
     const ids: string[] = [];
-    while (current(cursor) && !MODIFIERS.has(current(cursor)?.value ?? '')) {
+    while (
+      current(cursor) &&
+      !(current(cursor)?.kind === 'word' && MODIFIERS.has(current(cursor)?.value ?? ''))
+    ) {
       if (current(cursor)?.kind === 'comma') take(cursor);
       else {
         const id = takeWord(cursor, 'an edge ID');
@@ -413,7 +436,10 @@ function parseSelector(cursor: LineCursor): MotionSelector {
     }
     return { kind: 'edges', ids };
   }
-  if (first.value === 'participant' || first.value === 'node' || first.value === 'edge') {
+  if (
+    isKeyword &&
+    (first.value === 'participant' || first.value === 'node' || first.value === 'edge')
+  ) {
     const targetKind = first.value;
     take(cursor);
     return { kind: 'id', targetKind, id: takeWord(cursor, `a ${targetKind} ID`)?.value ?? '' };
@@ -613,7 +639,9 @@ function parseStatement(
 
   if (isEffect(verb.value)) {
     const selectorToken = current(cursor);
-    const hasExplicitSelector = selectorToken !== undefined && !MODIFIERS.has(selectorToken.value);
+    const hasExplicitSelector =
+      selectorToken !== undefined &&
+      !(selectorToken.kind === 'word' && MODIFIERS.has(selectorToken.value));
     if (!hasExplicitSelector)
       diagnostics.push(
         diagnostic(
@@ -749,13 +777,15 @@ function formatTiming(statement: EffectStatement | MoveStatement | RemoveMarkerS
 function formatSelector(selector: MotionSelector): string {
   if (selector.kind === 'diagram') return 'diagram';
   if (selector.kind === 'allMessages') return 'messages';
-  if (selector.kind === 'route') return selector.nodes.join(' --> ');
-  if (selector.kind === 'edges') return `edges ${selector.ids.join(', ')}`;
+  if (selector.kind === 'route') return selector.nodes.map(formatMotionIdentifier).join(' --> ');
+  if (selector.kind === 'edges')
+    return `edges ${selector.ids.map(formatMotionIdentifier).join(', ')}`;
   if (selector.kind === 'message') {
-    const occurrence = selector.occurrence > 1 ? ` occurrence ${selector.occurrence}` : '';
-    return `message ${selector.from}${selector.arrow}${selector.to}: ${quote(selector.text)}${occurrence}`;
+    const occurrence =
+      selector.occurrence === undefined ? '' : ` occurrence ${selector.occurrence}`;
+    return `message ${formatMotionIdentifier(selector.from)}${selector.arrow}${formatMotionIdentifier(selector.to)}: ${quote(selector.text)}${occurrence}`;
   }
-  return `${selector.targetKind ? `${selector.targetKind} ` : ''}${selector.id}`;
+  return `${selector.targetKind ? `${selector.targetKind} ` : ''}${formatMotionIdentifier(selector.id)}`;
 }
 
 function formatStatement(statement: MotionStatement): string {
@@ -766,17 +796,17 @@ function formatStatement(statement: MotionStatement): string {
   }
   if (statement.kind === 'marker')
     return statement.displayLabel === statement.markerId
-      ? `marker ${statement.markerId}`
-      : `marker ${statement.markerId} as ${quote(statement.displayLabel)}`;
+      ? `marker ${formatMotionIdentifier(statement.markerId)}`
+      : `marker ${formatMotionIdentifier(statement.markerId)} as ${quote(statement.displayLabel)}`;
   if (statement.kind === 'wait') return `wait ${formatDuration(statement.durationMs)}`;
   if (statement.kind === 'removeMarker')
-    return `${formatTiming(statement)}remove ${statement.markerId}`;
+    return `${formatTiming(statement)}remove ${formatMotionIdentifier(statement.markerId)}`;
   if (statement.kind === 'move') {
     const duration =
       statement.durationMs === undefined ? '' : ` over ${formatDuration(statement.durationMs)}`;
     const easing = statement.easing === undefined ? '' : ` easing ${statement.easing}`;
     const color = statement.color === undefined ? '' : ` color ${statement.color}`;
-    return `${formatTiming(statement)}move ${statement.markerId} along ${statement.route.join(' --> ')}${duration}${easing}${color}`;
+    return `${formatTiming(statement)}move ${formatMotionIdentifier(statement.markerId)} along ${statement.route.map(formatMotionIdentifier).join(' --> ')}${duration}${easing}${color}`;
   }
   const durationKeyword =
     statement.effect === 'trace' && statement.selector.kind === 'route' ? 'over' : 'for';

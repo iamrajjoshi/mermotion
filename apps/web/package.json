@@ -2,6 +2,7 @@
   "name": "@mermotion/web",
   "version": "0.0.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "build": "vite build",
@@ -13,8 +14,8 @@
     "@fontsource-variable/ibm-plex-sans": "catalog:",
     "@fontsource-variable/jetbrains-mono": "catalog:",
     "@mermotion/engine": "workspace:*",
-    "@ungap/structured-clone": "1.4.0",
     "cmdk": "catalog:",
+    "gifenc": "catalog:",
     "idb": "catalog:",
     "lucide-react": "catalog:",
     "react": "catalog:",

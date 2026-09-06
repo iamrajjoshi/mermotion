@@ -1,22 +1,17 @@
 import { Command, CommanderError } from 'commander';
 import path from 'node:path';
-import type {
-  CompiledTimeline,
-  CompileResult,
-  Diagnostic,
-  FrameState,
-  MotionFormatResult,
-  MotionParseResult,
-  MotionStatement,
-} from '@mermotion/engine';
+import type { DiagramDocument } from '@mermotion/engine';
 import { parseDuration, DurationInputError } from './duration.js';
+import { gifRepeatCount, MAX_GIF_HOLD_MS } from './gif.js';
 import {
+  atomicWriteFile,
   atomicWriteTextFile,
   FileInputError,
   readDiagramFiles,
   readTextFile,
   requireExtension,
   siblingMotionPath,
+  type DiagramFiles,
 } from './files.js';
 import {
   attachFile,
@@ -29,18 +24,28 @@ import {
   type CliDiagnostic,
   type OutputWriter,
 } from './output.js';
+import {
+  RenderRuntimeError,
+  type prepareRenderer,
+  type renderDiagram,
+  type RenderFormat,
+  type RenderRequest,
+} from './render.js';
 
-export interface CliEngine {
-  validateMermaid: (source: string) => Promise<Diagnostic[]>;
-  validateMotion: (source: string) => Diagnostic[];
-  parseMotion: (source: string) => MotionParseResult;
-  formatMotion: (source: string) => MotionFormatResult;
-  compileMotion: (document: { mermaidSource: string; motionSource?: string }) => CompileResult;
-  sampleTimeline: (timeline: CompiledTimeline, timeMs: number) => FrameState;
-}
+export type CliEngine = Pick<
+  typeof import('@mermotion/engine'),
+  | 'compileMotion'
+  | 'formatMotion'
+  | 'parseMotion'
+  | 'sampleTimeline'
+  | 'validateMermaid'
+  | 'validateMotion'
+>;
 
 export interface CliDependencies {
   engine: CliEngine;
+  prepareRenderer: typeof prepareRenderer;
+  render: typeof renderDiagram;
   output: OutputWriter;
 }
 
@@ -52,39 +57,24 @@ interface JsonOption {
   json?: boolean;
 }
 
-type TargetResolution = 'not-needed' | 'inferred';
-
-const TARGETS_NOT_VERIFIED_CODE = 'CLI_TARGETS_NOT_VERIFIED';
-
-function statementUsesRenderedTargets(statement: MotionStatement): boolean {
-  return (
-    statement.kind === 'move' ||
-    (statement.kind === 'effect' && statement.selector.kind !== 'diagram')
-  );
+interface RenderCommandOptions {
+  at?: string;
+  check?: boolean;
+  hold?: string;
+  loop?: string;
+  output?: string;
 }
 
-function targetResolution(motionSource: string | undefined, engine: CliEngine): TargetResolution {
-  if (motionSource === undefined) return 'not-needed';
-  const document = engine.parseMotion(motionSource).document;
-  return document?.statements.some(statementUsesRenderedTargets) === true
-    ? 'inferred'
-    : 'not-needed';
-}
+const CLI_VERSION = '0.1.0';
 
-function targetResolutionDiagnostics(
-  resolution: TargetResolution,
-  motionPath: string,
-): CliDiagnostic[] {
-  if (resolution === 'not-needed') return [];
-  return [
-    {
-      code: TARGETS_NOT_VERIFIED_CODE,
-      severity: 'warning',
-      message:
-        'Motion targets are inferred; rendered target existence and ambiguity were not checked.',
-      file: motionPath,
-    },
-  ];
+class CliInputError extends Error {
+  readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = 'CliInputError';
+    this.code = code;
+  }
 }
 
 export async function runCli(
@@ -142,8 +132,8 @@ function createProgram(
   const program = new Command();
   program
     .name('mermotion')
-    .description('Validate, compile, format, and sample Mermaid motion documents.')
-    .version('0.0.0')
+    .description('Render, validate, compile, format, and sample Mermaid motion documents.')
+    .version(CLI_VERSION)
     .option('--json', 'write a stable machine-readable JSON envelope')
     .showHelpAfterError()
     .exitOverride()
@@ -158,11 +148,31 @@ function createProgram(
     });
 
   program
+    .command('setup')
+    .description('prepare local rendering')
+    .action(async function (this: Command) {
+      setOutcome(await runSetup(wantsJson(this), dependencies));
+    });
+
+  program
+    .command('render')
+    .description('render an SVG, PNG, or animated GIF from a Mermaid diagram')
+    .argument('<diagram.mmd>', 'Mermaid source file')
+    .option('-o, --output <path>', 'output .svg, .png, or .gif path')
+    .option('--at <duration>', 'SVG or PNG timestamp such as 250ms or 1.5s')
+    .option('--loop <mode>', 'GIF loop: forever, once, or a total play count')
+    .option('--hold <duration>', 'GIF pause on the final frame between loops')
+    .option('--check', 'render and validate without writing an output file')
+    .action(async (diagramPath: string, options: RenderCommandOptions, command: Command) => {
+      setOutcome(await runRender(diagramPath, options, wantsJson(command), dependencies));
+    });
+
+  program
     .command('validate')
     .description('validate a Mermaid diagram and its optional sibling motion file')
     .argument('<diagram.mmd>', 'Mermaid source file')
-    .action(async (diagramPath: string, _options: object, command: Command) => {
-      setOutcome(await runValidate(diagramPath, wantsJson(command), dependencies));
+    .action(async function (this: Command, diagramPath: string) {
+      setOutcome(await runValidate(diagramPath, wantsJson(this), dependencies));
     });
 
   const motion = program.command('motion').description('work with motion source files');
@@ -171,8 +181,8 @@ function createProgram(
     .command('check')
     .description('validate a motion file or the sibling motion file for a Mermaid diagram')
     .argument('<file.motion|diagram.mmd>', 'motion file or Mermaid source file')
-    .action(async (inputPath: string, _options: object, command: Command) => {
-      setOutcome(await runMotionCheck(inputPath, wantsJson(command), dependencies));
+    .action(async function (this: Command, inputPath: string) {
+      setOutcome(await runMotionCheck(inputPath, wantsJson(this), dependencies));
     });
 
   motion
@@ -190,8 +200,8 @@ function createProgram(
     .command('compile')
     .description('compile a Mermaid diagram and its sibling motion file')
     .argument('<diagram.mmd>', 'Mermaid source file')
-    .action(async (diagramPath: string, _options: object, command: Command) => {
-      setOutcome(await runMotionCompile(diagramPath, wantsJson(command), dependencies));
+    .action(async function (this: Command, diagramPath: string) {
+      setOutcome(await runMotionCompile(diagramPath, wantsJson(this), dependencies));
     });
 
   program
@@ -204,6 +214,166 @@ function createProgram(
     });
 
   return program;
+}
+
+async function runSetup(json: boolean, dependencies: CliDependencies): Promise<CommandOutcome> {
+  if (!json) dependencies.output.stdout('Preparing Mermotion rendering...\n');
+  await dependencies.prepareRenderer();
+
+  const data = { ready: true };
+  if (json) writeJson(dependencies.output, jsonEnvelope('setup', true, data, []));
+  else dependencies.output.stdout('Mermotion rendering is ready.\n');
+  return { exitCode: 0 };
+}
+
+function outputForDiagram(
+  diagramPath: string,
+  requestedOutput: string | undefined,
+): {
+  format: RenderFormat;
+  outputPath: string;
+} {
+  const outputPath = path.resolve(
+    requestedOutput ?? `${diagramPath.slice(0, -path.extname(diagramPath).length)}.svg`,
+  );
+  const extension = path.extname(outputPath).toLowerCase();
+  if (extension !== '.svg' && extension !== '.png' && extension !== '.gif') {
+    throw new FileInputError(
+      'CLI_INVALID_OUTPUT_FORMAT',
+      `Expected an .svg, .png, or .gif output path, received ${outputPath}`,
+      outputPath,
+    );
+  }
+  const format: RenderFormat = extension === '.gif' ? 'gif' : extension === '.png' ? 'png' : 'svg';
+  return { format, outputPath };
+}
+
+async function runRender(
+  inputPath: string,
+  options: RenderCommandOptions,
+  json: boolean,
+  dependencies: CliDependencies,
+): Promise<CommandOutcome> {
+  const files = await readDiagramFiles(inputPath);
+  const output = outputForDiagram(files.diagramPath, options.output);
+  const source = {
+    mermaidSource: files.mermaidSource,
+    ...(files.motionSource === undefined ? {} : { motionSource: files.motionSource }),
+  };
+  let request: RenderRequest;
+  let timeMs: number | null;
+  if (output.format === 'gif') {
+    if (options.at !== undefined) {
+      throw new CliInputError(
+        'CLI_GIF_AT_UNSUPPORTED',
+        'GIF export uses the full motion timeline; remove --at or choose an .svg or .png output.',
+      );
+    }
+    let repeat: number;
+    try {
+      repeat = gifRepeatCount(options.loop ?? 'forever');
+    } catch (error) {
+      throw new CliInputError(
+        'CLI_INVALID_GIF_LOOP',
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+    const requestedEndPauseMs = parseDuration(options.hold ?? '500ms');
+    if (requestedEndPauseMs > MAX_GIF_HOLD_MS) {
+      throw new CliInputError(
+        'CLI_INVALID_GIF_HOLD',
+        `GIF hold must not exceed ${MAX_GIF_HOLD_MS}ms.`,
+      );
+    }
+    request = {
+      ...source,
+      endPauseMs: repeat === -1 ? 0 : requestedEndPauseMs,
+      format: 'gif',
+      repeat,
+    };
+    timeMs = null;
+  } else {
+    if (options.loop !== undefined || options.hold !== undefined) {
+      throw new CliInputError(
+        'CLI_GIF_OPTION_REQUIRES_GIF',
+        '--loop and --hold require a .gif output path.',
+      );
+    }
+    timeMs = parseDuration(options.at ?? '0ms');
+    request = { ...source, format: output.format, timeMs };
+  }
+  const isGif = request.format === 'gif';
+  const mermaidDiagnostics = attachFile(
+    await dependencies.engine.validateMermaid(files.mermaidSource),
+    files.diagramPath,
+  );
+
+  if (hasErrors(mermaidDiagnostics)) {
+    const data = {
+      diagramPath: files.diagramPath,
+      motionPath: files.motionSource === undefined ? null : files.motionPath,
+      outputPath: null,
+      format: output.format,
+      timeMs,
+      durationMs: null,
+      diagramType: null,
+      targetCount: null,
+      written: false,
+    };
+    if (json)
+      writeJson(dependencies.output, jsonEnvelope('render', false, data, mermaidDiagnostics));
+    else writeDiagnostics(dependencies.output, mermaidDiagnostics);
+    return { exitCode: 1 };
+  }
+
+  const rendered = await dependencies.render(request);
+  const motionDiagnostics = attachFile(rendered.diagnostics, files.motionPath);
+  const diagnostics = [...mermaidDiagnostics, ...motionDiagnostics];
+  const ok = !hasErrors(diagnostics);
+  if (ok && isGif && !rendered.animation) {
+    throw new RenderRuntimeError(
+      'CLI_RENDER_FAILED',
+      'Mermotion could not render this diagram. Check the Mermaid and motion source, then retry.',
+      3,
+    );
+  }
+  const written = ok && options.check !== true;
+  if (written) await atomicWriteFile(output.outputPath, rendered.bytes);
+
+  const data = {
+    diagramPath: files.diagramPath,
+    motionPath: files.motionSource === undefined ? null : files.motionPath,
+    outputPath: written ? output.outputPath : null,
+    format: output.format,
+    timeMs,
+    durationMs: rendered.durationMs,
+    diagramType: rendered.diagramType,
+    targetCount: rendered.targetCount,
+    frameCount: rendered.animation?.frameCount ?? null,
+    height: rendered.animation?.height ?? null,
+    playbackMs: rendered.animation?.playbackMs ?? null,
+    width: rendered.animation?.width ?? null,
+    written,
+  };
+  if (json) {
+    writeJson(dependencies.output, jsonEnvelope('render', ok, data, diagnostics));
+  } else {
+    writeDiagnostics(dependencies.output, diagnostics);
+    if (ok) {
+      let message: string;
+      if (options.check === true) {
+        message = isGif
+          ? `GIF render check passed: ${files.diagramPath}\n`
+          : `Render check passed at ${timeMs}ms: ${files.diagramPath}\n`;
+      } else if (isGif) {
+        message = `Rendered GIF (${rendered.animation?.frameCount ?? 0} frames): ${output.outputPath}\n`;
+      } else {
+        message = `Rendered ${output.format.toUpperCase()} at ${timeMs}ms: ${output.outputPath}\n`;
+      }
+      dependencies.output.stdout(message);
+    }
+  }
+  return { exitCode: ok ? 0 : 1 };
 }
 
 async function runValidate(
@@ -220,17 +390,11 @@ async function runValidate(
     files.motionSource === undefined
       ? []
       : attachFile(dependencies.engine.validateMotion(files.motionSource), files.motionPath);
-  const resolution = targetResolution(files.motionSource, dependencies.engine);
-  const diagnostics = [
-    ...mermaidDiagnostics,
-    ...motionDiagnostics,
-    ...targetResolutionDiagnostics(resolution, files.motionPath),
-  ];
+  const diagnostics = [...mermaidDiagnostics, ...motionDiagnostics];
   const ok = !hasErrors(diagnostics);
   const data = {
     diagramPath: files.diagramPath,
     motionPath: files.motionSource === undefined ? null : files.motionPath,
-    targetResolution: resolution,
   };
 
   if (json) {
@@ -365,20 +529,17 @@ async function runMotionCompile(
 ): Promise<CommandOutcome> {
   const files = await readDiagramFiles(inputPath);
   const result = dependencies.engine.compileMotion(toDiagramDocument(files));
-  const resolution = targetResolution(files.motionSource, dependencies.engine);
   const diagnostics = [
     ...attachFile(
       await dependencies.engine.validateMermaid(files.mermaidSource),
       files.diagramPath,
     ),
     ...attachFile(result.diagnostics, files.motionPath),
-    ...targetResolutionDiagnostics(resolution, files.motionPath),
   ];
   const ok = !hasErrors(diagnostics) && result.timeline !== undefined;
   const data = {
     diagramPath: files.diagramPath,
     motionPath: files.motionSource === undefined ? null : files.motionPath,
-    targetResolution: resolution,
     timeline: result.timeline ?? null,
   };
 
@@ -404,14 +565,12 @@ async function runSample(
   const timeMs = parseDuration(time);
   const files = await readDiagramFiles(inputPath);
   const result = dependencies.engine.compileMotion(toDiagramDocument(files));
-  const resolution = targetResolution(files.motionSource, dependencies.engine);
   const diagnostics = [
     ...attachFile(
       await dependencies.engine.validateMermaid(files.mermaidSource),
       files.diagramPath,
     ),
     ...attachFile(result.diagnostics, files.motionPath),
-    ...targetResolutionDiagnostics(resolution, files.motionPath),
   ];
   const timeline = result.timeline;
   const canSample = !hasErrors(diagnostics) && timeline !== undefined;
@@ -422,7 +581,6 @@ async function runSample(
   const data = {
     diagramPath: files.diagramPath,
     motionPath: files.motionSource === undefined ? null : files.motionPath,
-    targetResolution: resolution,
     timeMs,
     frame,
   };
@@ -440,10 +598,7 @@ async function runSample(
   return { exitCode: canSample ? 0 : 1 };
 }
 
-function toDiagramDocument(files: { mermaidSource: string; motionSource?: string }): {
-  mermaidSource: string;
-  motionSource?: string;
-} {
+function toDiagramDocument(files: DiagramFiles): DiagramDocument {
   return {
     mermaidSource: files.mermaidSource,
     ...(files.motionSource === undefined ? {} : { motionSource: files.motionSource }),
@@ -471,9 +626,23 @@ function toFailure(
   }
   if (error instanceof DurationInputError) {
     return {
-      command: 'sample',
+      command,
       diagnostic: cliDiagnostic(error.code, error.message),
       exitCode: 2,
+    };
+  }
+  if (error instanceof CliInputError) {
+    return {
+      command,
+      diagnostic: cliDiagnostic(error.code, error.message),
+      exitCode: 2,
+    };
+  }
+  if (error instanceof RenderRuntimeError) {
+    return {
+      command,
+      diagnostic: cliDiagnostic(error.code, error.message),
+      exitCode: error.exitCode,
     };
   }
 
@@ -489,8 +658,14 @@ function toFailure(
 
 function inferCommand(arguments_: readonly string[]): CliCommand {
   const commands = arguments_.filter((argument) => !argument.startsWith('-'));
+  if (commands[0] === 'setup') {
+    return 'setup';
+  }
   if (commands[0] === 'validate') {
     return 'validate';
+  }
+  if (commands[0] === 'render') {
+    return 'render';
   }
   if (commands[0] === 'sample') {
     return 'sample';

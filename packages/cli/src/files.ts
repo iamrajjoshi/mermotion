@@ -1,12 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { open, rename, stat, unlink } from 'node:fs/promises';
 import path from 'node:path';
+import type { DiagramDocument } from '@mermotion/engine';
 
-export interface DiagramFiles {
+export interface DiagramFiles extends DiagramDocument {
   diagramPath: string;
-  mermaidSource: string;
   motionPath: string;
-  motionSource?: string;
 }
 
 export class FileInputError extends Error {
@@ -51,7 +50,7 @@ export async function readTextFile(filePath: string): Promise<string> {
   }
 }
 
-export async function readOptionalTextFile(filePath: string): Promise<string | undefined> {
+async function readOptionalTextFile(filePath: string): Promise<string | undefined> {
   try {
     return await readTextFile(filePath);
   } catch (error) {
@@ -78,7 +77,10 @@ export async function readDiagramFiles(inputPath: string): Promise<DiagramFiles>
   };
 }
 
-export async function atomicWriteTextFile(filePath: string, content: string): Promise<void> {
+export async function atomicWriteFile(
+  filePath: string,
+  content: string | Uint8Array,
+): Promise<void> {
   const resolvedPath = path.resolve(filePath);
   const directory = path.dirname(resolvedPath);
   const temporaryPath = path.join(
@@ -98,7 +100,8 @@ export async function atomicWriteTextFile(filePath: string, content: string): Pr
   try {
     const handle = await open(temporaryPath, 'wx', mode);
     try {
-      await handle.writeFile(content, { encoding: 'utf8' });
+      if (typeof content === 'string') await handle.writeFile(content, { encoding: 'utf8' });
+      else await handle.writeFile(content);
       await handle.sync();
     } finally {
       await handle.close();
@@ -108,6 +111,10 @@ export async function atomicWriteTextFile(filePath: string, content: string): Pr
     await unlink(temporaryPath).catch(() => undefined);
     throw toFileInputError(error, resolvedPath);
   }
+}
+
+export async function atomicWriteTextFile(filePath: string, content: string): Promise<void> {
+  await atomicWriteFile(filePath, content);
 }
 
 function toFileInputError(error: unknown, filePath: string): FileInputError {
@@ -142,6 +149,6 @@ function toFileInputError(error: unknown, filePath: string): FileInputError {
   });
 }
 
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
+function isNodeError(error: unknown): error is NodeJS.ErrnoException & { code: string } {
+  return error instanceof Error && 'code' in error && typeof error.code === 'string';
 }

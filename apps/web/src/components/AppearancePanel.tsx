@@ -11,11 +11,9 @@ import {
   type HexColor,
   type MermaidDiagramPalette,
   type ShellPalette,
-  type ShellPaletteName,
+  type ShellPaletteField,
 } from '../appearance';
 import { isMermaidTheme, mermaidThemes, type MermaidTheme } from '../theme';
-
-type ShellColorKey = Exclude<keyof ShellPalette, 'name'>;
 
 interface AppearancePanelProps {
   appearance: AppearancePreference;
@@ -37,7 +35,7 @@ interface ColorFieldProps {
   onChange: (value: HexColor) => void;
 }
 
-const interfaceFields: ReadonlyArray<{ key: ShellColorKey; label: string }> = [
+const interfaceFields: ReadonlyArray<{ key: ShellPaletteField; label: string }> = [
   { key: 'workspace', label: 'Workspace' },
   { key: 'surface', label: 'Surface' },
   { key: 'raised', label: 'Raised surface' },
@@ -49,7 +47,7 @@ const interfaceFields: ReadonlyArray<{ key: ShellColorKey; label: string }> = [
   { key: 'headerInk', label: 'Header text' },
 ];
 
-const stateFields: ReadonlyArray<{ key: ShellColorKey; label: string }> = [
+const stateFields: ReadonlyArray<{ key: ShellPaletteField; label: string }> = [
   { key: 'transport', label: 'Transport' },
   { key: 'accent', label: 'Selection' },
   { key: 'warning', label: 'Timing' },
@@ -199,7 +197,7 @@ export function AppearancePanel({
     };
   }, [onClose]);
 
-  const changeShellColor = (key: ShellColorKey, color: HexColor) => {
+  const changeShellColor = (key: ShellPaletteField, color: HexColor) => {
     onAppearanceChange({
       ...appearance,
       shellOverrides: { ...appearance.shellOverrides, [key]: color },
@@ -247,7 +245,7 @@ export function AppearancePanel({
               </div>
             </div>
             <div className="palette-presets">
-              {shellPaletteNames.map((name: ShellPaletteName) => {
+              {shellPaletteNames.map((name) => {
                 const selected = appearance.shellPreset === name;
                 return (
                   <button
@@ -348,7 +346,7 @@ export function AppearancePanel({
             <div className="appearance-section-heading">
               <div>
                 <h3>Motion</h3>
-                <p>One default; any cue can override it.</p>
+                <p>Written to the defaults line in diagram.motion.</p>
               </div>
             </div>
             <div className="source-file-chip">diagram.motion</div>

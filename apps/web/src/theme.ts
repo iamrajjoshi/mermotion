@@ -1,9 +1,4 @@
-import {
-  mermaidPaletteKeys,
-  normalizeHexColor,
-  type MermaidDiagramPalette,
-  type MermaidPaletteKey,
-} from './appearance';
+import { mermaidPaletteKeys, normalizeHexColor, type MermaidDiagramPalette } from './appearance';
 
 export const mermaidThemes = ['default', 'base', 'dark', 'forest', 'neutral'] as const;
 export type MermaidTheme = (typeof mermaidThemes)[number];
@@ -373,5 +368,3 @@ export function writeMermaidPalette(
     }
   });
 }
-
-export type { MermaidDiagramPalette, MermaidPaletteKey };

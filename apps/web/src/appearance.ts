@@ -109,7 +109,7 @@ export const mermaidPaletteKeys = [
   'tertiaryColor',
   'background',
 ] as const;
-export type MermaidPaletteKey = (typeof mermaidPaletteKeys)[number];
+type MermaidPaletteKey = (typeof mermaidPaletteKeys)[number];
 
 export interface MermaidDiagramPalette extends Record<MermaidPaletteKey, HexColor> {}
 
@@ -163,13 +163,13 @@ function colorChannels(color: HexColor): [number, number, number] {
 }
 
 function blendColors(from: HexColor, to: HexColor, amount: number): HexColor {
-  const source = colorChannels(from);
-  const destination = colorChannels(to);
-  const channel = (index: number) =>
-    Math.round(source[index]! + (destination[index]! - source[index]!) * amount)
+  const [sourceRed, sourceGreen, sourceBlue] = colorChannels(from);
+  const [destinationRed, destinationGreen, destinationBlue] = colorChannels(to);
+  const channel = (source: number, destination: number) =>
+    Math.round(source + (destination - source) * amount)
       .toString(16)
       .padStart(2, '0');
-  return `#${channel(0)}${channel(1)}${channel(2)}`;
+  return `#${channel(sourceRed, destinationRed)}${channel(sourceGreen, destinationGreen)}${channel(sourceBlue, destinationBlue)}`;
 }
 
 function linearChannel(channel: number): number {
@@ -177,16 +177,22 @@ function linearChannel(channel: number): number {
 }
 
 function isDark(color: HexColor): boolean {
-  const [red, green, blue] = colorChannels(color).map((channel) => channel / 255);
+  const [red, green, blue] = colorChannels(color);
   return (
-    linearChannel(red!) * 0.2126 + linearChannel(green!) * 0.7152 + linearChannel(blue!) * 0.0722 <
+    linearChannel(red / 255) * 0.2126 +
+      linearChannel(green / 255) * 0.7152 +
+      linearChannel(blue / 255) * 0.0722 <
     0.38
   );
 }
 
 function relativeLuminance(color: HexColor): number {
-  const [red, green, blue] = colorChannels(color).map((channel) => linearChannel(channel / 255));
-  return red! * 0.2126 + green! * 0.7152 + blue! * 0.0722;
+  const [red, green, blue] = colorChannels(color);
+  return (
+    linearChannel(red / 255) * 0.2126 +
+    linearChannel(green / 255) * 0.7152 +
+    linearChannel(blue / 255) * 0.0722
+  );
 }
 
 function contrastRatio(first: HexColor, second: HexColor): number {
@@ -245,5 +251,3 @@ export function resolveMermaidPalette(
   }
   return resolved;
 }
-
-export { readMermaidPalette, writeMermaidPalette } from './theme';

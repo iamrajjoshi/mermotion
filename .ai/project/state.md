@@ -1,114 +1,163 @@
 # Project state
 
 - Profile: standard
-- Stage: M1 implementation and verification
-- Active milestone: M1, animate one diagram (in progress)
-- Completed milestone: M0, reproducible project
-- Completed delivery unit: M1-U1, engine + local web workbench + Node-only CLI + motion polish
-- Next delivery unit: M1-U2, sandboxed preview realm + browser-backed CLI target resolution
-- Approved brief or PRD: `docs/project.md`
+- Stage: local v1 implemented through M4
+- Completed milestones: M0, reproducible project; M1, animate one diagram; M2, stable semantic
+  coverage; M3, animated export and Notion-oriented output; M4, scenes
+- Next milestone: none required for local v1
+- Approved brief: `docs/project.md`
 - Current-system view: `docs/architecture/system.md`
-- Open decisions and owners: Raj chooses a license before public release; hosting remains deferred to
-  M5 and server storage to M6
-- Pending research returns: none
+- License: MIT
+- Open decisions: none blocking local v1
 
-## Implemented state
+## Settled scope
 
-- Standard `.mmd` source remains separate from optional declarative `motionDiagram-v1` source.
-- Mermaid 11.17.2 renders in the browser with source-owned frontmatter themes.
-- The engine parses, formats, validates, compiles, and deterministically samples motion.
-- Named markers now use exact rendered edge geometry in root SVG coordinates, cross node interiors
-  without position jumps, and allocate time by measured route distance.
-- A named move renders as one screen-sized signal bead with a retained three-layer comet, a
-  direction-correct edge wake, a persistent collision-scored callout, node-occupancy outlines, and
-  a deterministic 200 ms arrival ring. These layers come from sampled timeline time rather than CSS
-  or WAAPI state.
-- Traces use a bright core, soft underlay, a small progress tip, and stable cue-based DOM identity.
-  Muted Mermaid strokes fall back to a contrast-safe mint; saturated theme colors remain intact.
-- The compiler rejects overlapping or discontinuous moves for the same marker. The player keeps
-  overlay DOM and geometry caches alive across frames, while React runs one stable playback loop.
-- Reduced-motion rendering keeps the semantic marker position while hiding comet, wake, halo, and
-  arrival decoration. Transient missing SVG geometry is retried instead of cached as a failure.
-- Browser target discovery covers flowchart nodes/edges and sequence participants/messages,
-  including repeated-message occurrences and Mermaid arrow semantics.
-- Unique sequence-diagram messages now support route-based marker movement and tracing; repeated
-  same-direction messages produce an ambiguity diagnostic instead of choosing one silently.
-- Mermotion-authored browser source avoids `toSorted`, `toReversed`, and `Array.at`; the web entry
-  also supplies guarded `Array.at` and `structuredClone` fallbacks for Mermaid and its dependencies.
-- The editor is organized as an animation desk: a 38/62 source and drafting-canvas split above
-  separate State, Route, and Signal timeline lanes. It provides selection-to-pulse authoring,
-  play/seek, zoom/pan/fit, command palette, responsive tabs, local persistence, and source-bundle
-  download.
-- Timeline cues are single lane-colored duration clips. Their selected, hover, and keyboard states
-  reuse the clip perimeter instead of adding an inner rail, badge, or detached outline.
-- The website and agent guide emit a small canonical M1 profile: bare Mermaid IDs, stable endpoint
-  routes, implicit-dot markers, one defaults declaration, `for` on target effects, and `over` on
-  paths. UI-authored source omits redundant first occurrences and never copies Mermaid-generated
-  SVG IDs.
-- The parser keeps older forms readable while diagnosing duplicate defaults, timing prefixes on
-  statements that cannot use them, and effects without a selector. Formatting removes the legacy
-  `shape dot` clause and preserves `over` on route traces.
-- Appearance offers four local desk presets and 13 editable interface roles. Its Transport color is
-  independent from source-owned Motion Signal, extreme colors get contrast-aware control ink, and
-  the modal traps focus while the background is inert.
-- Seven common Mermaid color roles are written to standard `config.themeVariables` frontmatter with
-  `theme: base`. Mermaid background drives the visible diagram ground while the local Canvas frame
-  remains a separate inset surround.
-- `defaults color` and cue-level color modifiers live in `.motion`, compile into deterministic
-  frames, and paint targets, traces, and retained route markers without changing Mermaid source.
-- The CLI validates, checks/formats motion, compiles, and samples with stable JSON envelopes.
-  Target-bearing commands are explicitly marked `inferred` and emit
-  `CLI_TARGETS_NOT_VERIFIED` until M1-U2.
+- Mermotion is a local website, engine, and CLI. Accounts, hosted saves, public share links,
+  collaboration, an application server, and server databases are permanent non-goals.
+- Agents use the CLI through `.agents/skills/mermotion`. MCP and agent-only syntax are out of scope.
+- Mermaid remains the renderer of record. `.mmd` owns structure and theme; optional `.motion` owns
+  timing and effects.
+- Parse, check, format, compile, and sample stay browser-free. `mermotion render` owns the Chromium
+  layout needed for authoritative target binding and sampled SVG/PNG output. Playwright remains an
+  implementation dependency, although contributors install its Chromium binary during setup.
+
+## M1 result
+
+### Motion
+
+- `move` defaults to linear travel. One cumulative distance table covers the source center,
+  Mermaid's measured connections, intermediate centers, reverse legs, and the destination.
+- A named marker keeps one bead, its authored color and label, and two retained full-route tail
+  paths. The tails end at the bead; ambient particles, edge wakes, and node-outline clones are gone.
+- Tail and trace paint uses normalized route geometry without `non-scaling-stroke`. Widths are
+  converted to root user units, which keeps screen size stable without shifting paint after zoom.
+- Arrival uses one finite zero-to-peak-to-zero ring. The label lane is chosen from the whole route
+  and stays fixed relative to the marker.
+- Geometry, target centers, overlay elements, route plans, and source colors are cached. Steady-frame
+  checks reject bounding-box rescans and child rebuilding.
+- Reduced motion preserves marker position and authored state while hiding the halo, tails, trace
+  glow, and arrival ring.
+
+### CLI and agent path
+
+- `mermotion render diagram.mmd --at 1.2s -o frame.svg` renders Mermaid, discovers real semantic
+  targets, compiles the optional sibling sidecar, samples the requested time, and writes SVG or PNG.
+- `render --check --json` runs the same authoritative path without writing output. Missing or
+  ambiguous targets fail with diagnostics before a file is created.
+- Each render uses a fresh Chromium context, blocks unexpected network requests, and loads the
+  bundled browser renderer. There is no resolver command or browser option in the public interface.
+- The portable Mermotion skill preserves ordinary Mermaid, writes only canonical `.motion`, runs
+  rendered checks, and requires inspection of a sampled artifact.
+
+### Website authoring
+
+- Source includes `diagram.mmd`, `diagram.motion`, and a non-persisted Syntax reference view. The
+  reference searches only canonical M1 forms, copies examples, and inserts complete statements at a
+  safe motion-source line boundary. Insertions adapt to semantic IDs from the current preview and do
+  not modify Mermaid. Move insertion declares a fresh marker, and stale or failed previews expose no
+  insertion targets.
+- The three source views use tab and tabpanel semantics with arrow, Home, and End navigation.
+  `Cmd/Ctrl+/` and the command palette open Syntax, including from the mobile Source region.
+
+## M2 result
+
+- Semantic bindings for flowchart and sequence diagrams survive changes to labels, declaration
+  order, layout, and theme. Missing, renamed, duplicate, and ambiguous targets fail instead of
+  binding by visible label or DOM position.
+- A sequence-message selector can omit `occurrence` only when its participant and message signature
+  is unique. Repeated signatures require one-based occurrences, including `occurrence 1`.
+- The Mermaid 11.17.2 compatibility matrix renders 30 user-facing families and 33 syntaxes in both
+  Chromium and Firefox. Families without a stable subtarget adapter still support whole-diagram
+  motion.
+- Dependabot checks the pinned Mermaid release weekly. An upgrade is accepted only after the engine,
+  semantic stability, render compatibility, and product browser suites pass.
+
+## M3 result
+
+- The website Export panel produces `checkout.gif` from the current valid Mermaid and motion pair.
+  It offers width presets of 640, 960, and 1280 pixels at 10, 20, or 25 fps.
+- Playback metadata supports forever, once, or an explicit total play count. Looping exports may add
+  a 0.25, 0.5, 1, or 2 second hold on the final frame.
+- Sampling, canvas rasterization, and `gifenc` encoding happen in the browser against a sanitized,
+  off-screen SVG. Export uploads nothing and does not use the CLI, an application server, a hosted
+  project store, or PostgreSQL.
+- Animated-bounds sampling fixes one export view box that contains moving labels, tails, markers,
+  and effect paint across the whole timeline.
+- Exports cap at 600 sampled frames. Tall diagrams keep their aspect ratio and scale down when the
+  requested width would exceed the 2,400 pixel encoder height limit. A 120 million pixel-frame
+  preflight rejects unsafe dimension, cadence, and duration combinations before canvas allocation.
+- **Use 640px · 10fps** sets a Notion-oriented GIF preset. After encoding, the result reports
+  whether the local file is under the 5 MB upload target; there is no Notion API integration.
+- The CLI writes the full timeline when output ends in `.gif`. It uses the same sampler and one
+  isolated Chromium page, with explicit `--loop` and `--hold` playback controls and machine-readable
+  frame, dimension, duration, and playback metadata.
+
+## M4 result
+
+- The website holds an ordered scene workspace. Add, rename, duplicate, delete, reorder, and switch
+  operate on independent Mermaid and motion source pairs.
+- Presentation mode reuses the existing preview and sampler, hides editing chrome, and provides
+  previous, next, direct scene, and play or pause controls.
+- IndexedDB v2 stores the scene workspace and migrates the original single source pair. The explicit
+  `workspace.mermotion.json` download contains every scene plus top-level mirrors of the active pair.
+- Browser saves use an IndexedDB revision check, so an older tab cannot overwrite a newer workspace.
+  A blocked or failed store leaves the in-memory sources editable and exportable instead of saving
+  starter content over the existing record.
+- Scene storage, preview, presentation, GIF creation, and source download all stay in the browser.
+
+## Public repository preparation
+
+- `LICENSE` contains the MIT text and every workspace manifest declares MIT.
+- Repository, bug, and homepage metadata point to `iamrajjoshi/mermotion`. The root
+  `mermotion@0.1.0` package bundles the CLI and portable skill; internal workspace packages remain
+  private.
+- CI actions are commit-pinned. Dependabot covers npm and GitHub Actions, and the browser job runs the
+  CLI renderer before the full product suite.
+- Browser concurrency is capped at two because parallel Mermaid startup made Firefox and IndexedDB
+  checks flaky on shared runners.
 
 ## Latest executable proof
 
-- `npx --yes pnpm@11.25.0 install --frozen-lockfile`: passed from the locked dependency state.
-- `pnpm verify`: formatting, Oxlint, dependency boundaries, strict TypeScript, 91 Vitest
-  tests, and all workspace builds passed.
-- `CI=1 pnpm test:e2e` and a final `PLAYWRIGHT_REUSE_SERVER=1 pnpm test:e2e`: the production build
-  passed 76 product tests across Chromium and Firefox, including screen-space
-  marker/edge agreement, reverse and repeated routes, persistent collision-checked labels, aligned
-  traces, retained overlay identity, byte-identical reseeking, arrival phases, reduced motion,
-  sequence-message movement and tracing, repeated-edge traces, missing-native compatibility,
-  content-sized timelines, themes, click-to-author,
-  deterministic seeking, invalid-source retention, local draft restoration, repeated sequence
-  messages, command palette, mobile regions, appearance persistence, declarative Mermaid and motion
-  color writes, preview-ground and canvas-frame ownership, transport/signal isolation, modal focus
-  containment, and preset contrast.
-- `pnpm audit --audit-level high`: no known vulnerabilities found.
-- CLI smoke: validate/check/format-check/compile/sample all exited 0; target-bearing JSON carried
-  the expected warning, and the Mermaid source SHA-256 remained
-  `c7c9f54fb517338b2524e631b1b7f881f5d77fdc3805d58ed5c817bb5686c09d`.
-- Fresh-agent canary: independently found setup/check commands, explained the source/engine/web/CLI
-  boundaries, authored a valid node pulse, and identified CLI rendered-target truth as the next gap.
-- Graphite desktop, the full Appearance sheet, source-owned color controls, Paper/Midnight, mobile
-  layouts, and the revised timeline clips were captured from the production build and visually
-  inspected. The current workbench still is committed at `docs/assets/mermotion-workbench.png`.
-- The polished starter was scrubbed and played in the production build; the exact legacy starter in
-  IndexedDB migrates without replacing edited drafts.
+- `pnpm verify`: Oxfmt, Oxlint, dependency boundaries, strict TypeScript, 213 Vitest tests, and every
+  workspace build passed. Nine opt-in browser cases were skipped by this Node-only gate.
+- `pnpm --filter @mermotion/cli test:render`: nine real-Chromium cases passed for flowchart and
+  sequence SVG, PNG, and GIF output, loop metadata, output-scale animated bounds, target failure,
+  and inert SVG export.
+- `CI=1 pnpm test:e2e`: 142 product tests passed across Chromium and Firefox with two workers. The
+  run covered 30 Mermaid families, semantic stability, scenes, presentation, local persistence,
+  browser isolation, motion paint, responsive UI, and GIF bytes plus playback metadata.
+- `pnpm test:package`: a packed `mermotion@0.1.0` tarball installed outside the checkout, validated
+  source, and rendered an animated SVG with no dependency on the private engine workspace.
+- `pnpm audit --audit-level high`: no known vulnerabilities. The portable skill passed the
+  `skill-creator` validator, `git diff --check` passed, and the desktop workbench, active motion,
+  presentation, and export panel were inspected from a production build.
+- Paint-level tests prove each tail is behind its marker and each trace draws the completed portion.
+  Route tests cover multi-hop continuity, reverse and repeated legs, exact reseeking, retained DOM,
+  arrival endpoints, stable labels, deterministic layer order, hostile Mermaid theme CSS, zoom,
+  reduced motion, and a unique sequence message.
+- Preview security tests prove the renderer has an opaque origin with no parent-DOM access, recovers
+  with a fresh isolated document after a timeout, and prevents form navigation. Remote image syntax,
+  HTML image labels, external links, and CSS URLs make no requests while the original Mermaid source
+  remains unchanged.
+- Persistence tests prove blocked upgrades time out and recover after reload, valid v2 scene names
+  survive migration, and a stale second tab cannot overwrite a newer workspace revision.
+- Warm-frame browser assertions seek twice after setup and reject bounding-box reads, computed-style
+  reads, child-list rebuilding, or more than two screen-transform reads.
 
-## Readiness scan
+## Deliberate limits after local v1
 
-The required pre-code `@kodus/agent-readiness@0.1.3` baseline ran against the empty repository.
-The post-U1 scan recognized 7 of 8 checks toward Level 2 but remained Level 1 because that version
-does not recognize the selected Oxc tools and missed several present configurations. See
-`.ai/project/agent-readiness.md` for the exact false negatives and intentional omissions.
+- Semantic subtarget adapters remain limited to flowchart and sequence diagrams; all covered Mermaid
+  families can still animate as a whole diagram.
+- Repeated parallel flowchart connections remain ambiguous for endpoint-only route selectors. A
+  future syntax decision must identify one without exposing Mermaid-generated SVG IDs.
+- GIF is the local animated format in v1. Video can be considered after a browser and codec support
+  contract is chosen.
 
-## Known gaps
+Changing repository visibility, committing, pushing, or publishing requires explicit authorization.
 
-- Preview SVG currently lives in the application document under Mermaid strict security; sandboxed
-  iframe rendering and a typed bridge remain M1-U2.
-- CLI target keys are inferred without rendering; an opt-in Playwright target resolver remains M1-U2.
-- Browser compatibility proof covers current Chromium and Firefox; the wider supported-browser
-  matrix belongs to M2. M2-U1 also owns same-direction sequence-message disambiguation and authored
-  node dwell timing.
-- The production build reports large Mermaid-related chunks; M2 owns an initial-load budget rather
-  than treating that warning as an M1 correctness blocker.
-- GIF/video/static rendered export, Notion integration, stories, sharing, accounts, MCP, server, and
-  PostgreSQL remain later or conditional milestones.
+## Readiness scan note
 
-## Next gate
-
-M1-U2 must prove isolated browser rendering, real CLI target inventory for flowchart and sequence
-fixtures, failure on missing/ambiguous CLI targets, a shipped browser bridge, and unchanged
-browser-free syntax/format commands before M1 is called complete.
+The required pre-code `@kodus/agent-readiness@0.1.3` baseline and M1-U1 reassessment are historical
+structural snapshots. That scanner did not recognize the selected Oxc tools and missed several
+present configurations. See `.ai/project/agent-readiness.md` for the recorded results and current
+interpretation.

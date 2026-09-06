@@ -36,6 +36,9 @@ catalogs:
     dompurify:
       specifier: 3.4.14
       version: 3.4.14
+    gifenc:
+      specifier: 1.0.3
+      version: 1.0.3
     idb:
       specifier: 8.0.3
       version: 8.0.3
@@ -54,6 +57,9 @@ catalogs:
     oxlint-tsgolint:
       specifier: 7.0.2001
       version: 7.0.2001
+    playwright:
+      specifier: 1.62.1
+      version: 1.62.1
     react:
       specifier: 19.2.8
       version: 19.2.8
@@ -76,6 +82,19 @@ catalogs:
 importers:
 
   .:
+    dependencies:
+      commander:
+        specifier: 'catalog:'
+        version: 15.0.0
+      dompurify:
+        specifier: 'catalog:'
+        version: 3.4.14
+      mermaid:
+        specifier: 'catalog:'
+        version: 11.17.2
+      playwright:
+        specifier: 'catalog:'
+        version: 1.62.1
     devDependencies:
       '@playwright/test':
         specifier: 'catalog:'
@@ -110,12 +129,12 @@ importers:
       '@mermotion/engine':
         specifier: workspace:*
         version: link:../../packages/engine
-      '@ungap/structured-clone':
-        specifier: 1.4.0
-        version: 1.4.0
       cmdk:
         specifier: 'catalog:'
         version: 1.1.1(@types/react-dom@19.2.7(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      gifenc:
+        specifier: 'catalog:'
+        version: 1.0.3
       idb:
         specifier: 'catalog:'
         version: 8.0.3
@@ -156,6 +175,12 @@ importers:
       commander:
         specifier: 'catalog:'
         version: 15.0.0
+      gifenc:
+        specifier: 'catalog:'
+        version: 1.0.3
+      playwright:
+        specifier: 'catalog:'
+        version: 1.62.1
     devDependencies:
       '@types/node':
         specifier: 'catalog:'
@@ -163,6 +188,12 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 7.0.2
+      vite:
+        specifier: 'catalog:'
+        version: 8.2.2(@types/node@24.13.3)
+      vitest:
+        specifier: 'catalog:'
+        version: 5.0.0(@types/node@24.13.3)(vite@8.2.2(@types/node@24.13.3))
 
   packages/engine:
     dependencies:
@@ -998,9 +1029,6 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@ungap/structured-clone@1.4.0':
-    resolution: {integrity: sha512-1mEZtMKPM09vDmQt5y7YvmN2+DFTP7Tg0EWXdic8/C6VRnpb33e4ghisCIE3WZjsE2N8mf+QV1Zqh7ZFYLWInQ==}
-
   '@upsetjs/venn.js@2.0.0':
     resolution: {integrity: sha512-WbBhLrooyePuQ1VZxrJjtLvTc4NVfpOyKx0sKqioq9bX1C1m7Jgykkn8gLrtwumBioXIqam8DLxp88Adbue6Hw==}
 
@@ -1283,6 +1311,9 @@ packages:
   get-nonce@1.0.1:
     resolution: {integrity: sha512-FJhYRoDaiatfEkUK8HKlicmu/3SGFD51q3itKDGoSTysQJBnfOcxU5GxnhE1E6soB76MbT0MBtnKJuXyAx+96Q==}
     engines: {node: '>=6'}
+
+  gifenc@1.0.3:
+    resolution: {integrity: sha512-xdr6AdrfGBcfzncONUOlXMBuc5wJDtOueE3c5rdG0oNgtINLD+f2iFZltrBRZYzACRbKr+mSVU/x98zv2u3jmw==}
 
   hachure-fill@0.5.2:
     resolution: {integrity: sha512-3GKBOn+m2LX9iq+JC1064cSFprJY4jL1jCXTcpnfER5HYE2l/4EfWSGzkPa/ZDBmYI0ZOEj5VHV/eKnPGkHuOg==}
@@ -2275,8 +2306,6 @@ snapshots:
   '@typescript/typescript-win32-x64@7.0.2':
     optional: true
 
-  '@ungap/structured-clone@1.4.0': {}
-
   '@upsetjs/venn.js@2.0.0':
     optionalDependencies:
       d3-selection: 3.0.0
@@ -2557,6 +2586,8 @@ snapshots:
     optional: true
 
   get-nonce@1.0.1: {}
+
+  gifenc@1.0.3: {}
 
   hachure-fill@0.5.2: {}
 

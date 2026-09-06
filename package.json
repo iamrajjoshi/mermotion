@@ -1,21 +1,54 @@
 {
   "name": "mermotion",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Animate Mermaid diagrams with a declarative motion sidecar.",
+  "keywords": [
+    "animation",
+    "cli",
+    "diagram",
+    "mermaid"
+  ],
+  "homepage": "https://github.com/iamrajjoshi/mermotion#readme",
+  "bugs": {
+    "url": "https://github.com/iamrajjoshi/mermotion/issues"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/iamrajjoshi/mermotion.git"
+  },
+  "bin": {
+    "mermotion": "./packages/cli/dist/index.js"
+  },
+  "files": [
+    ".agents/skills/mermotion",
+    "packages/cli/dist"
+  ],
   "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "pnpm --filter @mermotion/engine build && pnpm --filter @mermotion/cli build && pnpm --filter @mermotion/web build",
     "dev": "pnpm --filter @mermotion/engine build && pnpm --filter @mermotion/web dev",
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
-    "lint": "oxlint .",
+    "lint": "pnpm --filter @mermotion/engine build && oxlint .",
     "mermotion": "pnpm --filter @mermotion/engine build && pnpm --filter @mermotion/cli build && node packages/cli/dist/index.js",
+    "prepack": "pnpm --filter @mermotion/engine build && pnpm --filter @mermotion/cli build",
     "policy:check": "node scripts/check-boundaries.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:package": "node scripts/test-package.mjs",
     "test:e2e": "playwright test",
     "typecheck": "pnpm --filter @mermotion/engine build && pnpm --recursive --if-present run typecheck",
     "verify": "pnpm format:check && pnpm lint && pnpm policy:check && pnpm typecheck && pnpm test && pnpm build"
+  },
+  "dependencies": {
+    "commander": "catalog:",
+    "dompurify": "catalog:",
+    "mermaid": "catalog:",
+    "playwright": "catalog:"
   },
   "devDependencies": {
     "@playwright/test": "catalog:",
@@ -27,7 +60,15 @@
     "vitest": "catalog:"
   },
   "engines": {
-    "node": ">=24.15.0"
+    "node": ">=24.20.0"
   },
-  "packageManager": "pnpm@11.25.0"
+  "packageManager": "pnpm@11.25.0",
+  "knip": {
+    "ignoreDependencies": [
+      "commander",
+      "dompurify",
+      "mermaid",
+      "playwright"
+    ]
+  }
 }

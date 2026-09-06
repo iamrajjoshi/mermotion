@@ -6,5 +6,5 @@
     "outDir": "dist",
     "tsBuildInfoFile": "../../node_modules/.cache/cli-build.tsbuildinfo"
   },
-  "exclude": ["src/**/*.test.ts"]
+  "exclude": ["src/**/*.test.ts", "src/browser-entry.ts"]
 }

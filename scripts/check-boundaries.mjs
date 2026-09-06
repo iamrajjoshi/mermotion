@@ -1,3 +1,5 @@
+// @ts-check
+
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +11,7 @@ const directMermaidImport = /(?:from\s+|import\s*\()(['"])mermaid\1/;
 const mermaidSubpathImport = /(?:from\s+|import\s*\()(['"])mermaid\//;
 const violations = [];
 
+/** @param {string} directory */
 async function visit(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
 
@@ -40,15 +43,25 @@ async function visit(directory) {
 
 await Promise.all(sourceRoots.map(visit));
 
-const [workspaceSource, versionSource] = await Promise.all([
+const [workspaceSource, versionSource, packageSource, cliSource] = await Promise.all([
   readFile(path.join(repositoryRoot, 'pnpm-workspace.yaml'), 'utf8'),
   readFile(path.join(repositoryRoot, 'packages/engine/src/version.ts'), 'utf8'),
+  readFile(path.join(repositoryRoot, 'package.json'), 'utf8'),
+  readFile(path.join(repositoryRoot, 'packages/cli/src/cli.ts'), 'utf8'),
 ]);
 const catalogVersion = /^\s*mermaid:\s*['"]?([^'"\s]+)['"]?\s*$/m.exec(workspaceSource)?.[1];
 const adapterVersion = /MERMAID_VERSION\s*=\s*['"]([^'"]+)['"]/.exec(versionSource)?.[1];
 if (!catalogVersion || !adapterVersion || catalogVersion !== adapterVersion) {
   violations.push(
     `Mermaid version mismatch: catalog=${catalogVersion ?? 'missing'}, adapter=${adapterVersion ?? 'missing'}`,
+  );
+}
+
+const packageVersion = /^\s*"version":\s*"([^"]+)"/m.exec(packageSource)?.[1];
+const cliVersion = /CLI_VERSION\s*=\s*'([^']+)'/.exec(cliSource)?.[1];
+if (!packageVersion || !cliVersion || packageVersion !== cliVersion) {
+  violations.push(
+    `Mermotion version mismatch: package=${packageVersion ?? 'missing'}, CLI=${cliVersion ?? 'missing'}`,
   );
 }
 

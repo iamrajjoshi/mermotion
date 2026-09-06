@@ -1,0 +1,15 @@
+---
+config:
+  theme: base
+  themeVariables:
+    actorBkg: "#f7f8fc"
+    actorBorder: "#8790a6"
+    actorTextColor: "#252934"
+    signalColor: "#687086"
+---
+sequenceDiagram
+  participant worker as Worker
+  participant api as API
+  worker->>api: GET /status
+  api-->>worker: 200 OK
+  worker->>api: GET /status

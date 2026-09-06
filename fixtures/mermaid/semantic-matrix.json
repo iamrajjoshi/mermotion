@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "groups": [
+    {
+      "name": "flowchart-semantic-ids",
+      "motionFile": "flowchart-stability.motion",
+      "requiredTargetKeys": [
+        "diagram",
+        "node:source",
+        "node:api",
+        "node:worker",
+        "edge:source-->api#1",
+        "edge:api-->worker#1"
+      ],
+      "variants": [
+        {
+          "name": "baseline",
+          "file": "semantic/flowchart-baseline.mmd"
+        },
+        {
+          "name": "labels",
+          "file": "semantic/flowchart-labels.mmd"
+        },
+        {
+          "name": "source-order",
+          "file": "semantic/flowchart-source-order.mmd"
+        },
+        {
+          "name": "layout-and-theme",
+          "file": "semantic/flowchart-layout-theme.mmd"
+        }
+      ]
+    },
+    {
+      "name": "sequence-semantic-ids",
+      "motionFile": "sequence-stability.motion",
+      "requiredTargetKeys": [
+        "diagram",
+        "participant:worker",
+        "participant:api",
+        "message:worker->>api:GET /status#1",
+        "message:worker->>api:GET /status#2",
+        "message:api-->>worker:200 OK#1"
+      ],
+      "variants": [
+        {
+          "name": "baseline",
+          "file": "semantic/sequence-baseline.mmd"
+        },
+        {
+          "name": "labels",
+          "file": "semantic/sequence-labels.mmd"
+        },
+        {
+          "name": "source-order",
+          "file": "semantic/sequence-source-order.mmd"
+        },
+        {
+          "name": "theme",
+          "file": "semantic/sequence-theme.mmd"
+        }
+      ]
+    }
+  ]
+}

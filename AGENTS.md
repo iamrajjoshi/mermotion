@@ -14,7 +14,8 @@ Mermotion is a local-first editor and engine for adding deterministic motion to 
 - `apps/web`: React and Vite editor
 - `packages/engine`: document model, motion language, Mermaid adapter, compiler, sampler, and browser player
 - `packages/cli`: non-interactive local CLI
-- `fixtures`: current flowchart and sequence parser/motion smoke fixtures
+- `fixtures`: Mermaid render/semantic compatibility matrices and motion fixtures
+- `.agents/skills/mermotion`: portable authoring and rendered-proof workflow for coding agents
 - `e2e`: browser-level product proof
 
 Keep document, language, adapter, compiler, and player boundaries as internal modules in `packages/engine`. Do not create another workspace without a real independent consumer or release boundary.
@@ -39,7 +40,11 @@ Keep document, language, adapter, compiler, and player boundaries as internal mo
 - Motion is opt-in. A missing or empty motion source cannot animate or restyle the diagram.
 - Playback is a pure function of document plus time. Play and scrub use the same sampler.
 - Mermaid source is never silently rewritten by motion commands.
-- Keep project content local unless the user explicitly exports or publishes it.
+- Project content stays in local files, IndexedDB, or an explicit export. Do not add accounts,
+  hosted saves, public share links, collaboration, an application server, or server storage.
+- The agent surface is the CLI plus an instructional skill. Do not add MCP or an agent-only syntax.
+- Parse, check, and format commands stay browser-free. `mermotion render` owns browser layout behind
+  its adapter; do not expose the driver, test runners, or a separate discovery step.
 - Use semantic targets, never user-authored DOM selectors.
 
 ## Motion source that agents should write
@@ -52,9 +57,15 @@ Keep generated `.motion` files inside the small M1 authoring profile:
 - Use `for` on an effect, `over` on a path, and six-digit hex colors.
 - Declare a marker as `marker request as "Request"`; `dot` is the implicit shape.
 - Describe connections by stable endpoints such as `trace client --> api`. Never write Mermaid-generated SVG IDs such as `L_client_api_0`.
-- Use the longer sequence-message selector only when sender, receiver, label, and occurrence are needed to identify one rendered message.
+- A unique sequence message may omit `occurrence`. Generated source should keep it explicit, and repeated signatures must use `occurrence 1`, `occurrence 2`, and so on.
 
-The parser retains extra forms for existing files, but agents and UI writers must not invent YAML, JSON, CSS selectors, keyframe blocks, or new keywords. Run `pnpm mermotion motion check <diagram.mmd>` and `pnpm mermotion motion fmt <diagram.motion> --check` before handing back authored source.
+The parser retains extra forms for existing files, but agents and UI writers must not invent YAML,
+JSON, CSS selectors, keyframe blocks, or new keywords. Run `pnpm build`, then use
+`node packages/cli/dist/index.js motion check <diagram.mmd> --json`,
+`pnpm mermotion motion fmt <diagram.motion> --check`, and
+`node packages/cli/dist/index.js render <diagram.mmd> --check --json` before handing back authored
+source. Inspect a sampled SVG or PNG when motion changes; inspect the GIF when animated export
+changes.
 
 ## Git and proof
 

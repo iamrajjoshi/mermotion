@@ -1,5 +1,5 @@
 import { Command as CommandIcon, Download, Maximize2, Pause, Palette, Play } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from 'react';
 import { Group, Panel, Separator, useDefaultLayout } from 'react-resizable-panels';
 
 import { MERMAID_VERSION, type SemanticTarget } from '@mermotion/engine';
@@ -7,11 +7,9 @@ import { MERMAID_VERSION, type SemanticTarget } from '@mermotion/engine';
 import {
   defaultAppearancePreference,
   defaultMermaidDiagramPalette,
-  readMermaidPalette,
   resolveMermaidPalette,
   resolveShellPalette,
   shellPaletteCssVariables,
-  writeMermaidPalette,
   type AppearancePreference,
   type HexColor,
   type MermaidDiagramPalette,
@@ -19,43 +17,40 @@ import {
 import { summarizeCues, inferDuration, type CueSummary } from './cues';
 import { AppearancePanel } from './components/AppearancePanel';
 import { CommandMenu, type CommandAction } from './components/CommandMenu';
-import { Preview } from './components/Preview';
+import { ExportPanel } from './components/ExportPanel';
+import { Preview, type PreviewHandle } from './components/Preview';
+import { PresentationView } from './components/PresentationView';
+import { SceneRail } from './components/SceneRail';
 import { SourceEditor, type SourceFile, type UiDiagnostic } from './components/SourceEditor';
 import { Timeline } from './components/Timeline';
+import type { GifExporter, GifExportInfo } from './gif-export';
 import { readMotionDefaultColor, writeMotionDefaultColor } from './motion-source';
+import {
+  activeScene,
+  addScene,
+  deleteScene,
+  duplicateScene,
+  moveScene,
+  renameScene,
+  selectScene,
+  updateActiveSceneSource,
+  type SceneWorkspace,
+} from './scenes';
 import {
   loadWorkspace,
   requestPersistentStorage,
   saveWorkspace,
   type ThemePreference,
+  WorkspaceRevisionConflictError,
 } from './storage';
 import { DEMO_DURATION_MS, clampTime } from './time';
 import { motionStatementForTarget } from './target-source';
-import { isMermaidTheme, readMermaidTheme, writeMermaidTheme } from './theme';
-
-const legacyStarterDiagram = `---
-config:
-  theme: base
-  themeVariables:
-    primaryColor: "#dff8f3"
-    primaryTextColor: "#173c37"
-    primaryBorderColor: "#2a9d8f"
-    lineColor: "#68847e"
-    secondaryColor: "#fff6dd"
-    tertiaryColor: "#eef2f0"
----
-flowchart LR
-  brief["Write Mermaid"]:::source --> render{"Render & select"}:::decision
-  render -->|node| cue["Add motion"]:::motion
-  render -->|route| trace["Trace a path"]:::motion
-  cue --> preview["Seek any moment"]:::result
-  trace --> preview
-
-  classDef source fill:#dff8f3,stroke:#2a9d8f,color:#173c37
-  classDef engine fill:#eef2f0,stroke:#68847e,color:#23332f
-  classDef decision fill:#fff6dd,stroke:#c28a21,color:#563d0c
-  classDef motion fill:#d8f3ef,stroke:#0f766e,color:#17443e
-  classDef result fill:#173c37,stroke:#2dd4bf,color:#ecf4f1`;
+import {
+  readMermaidPalette,
+  readMermaidTheme,
+  writeMermaidPalette,
+  writeMermaidTheme,
+} from './theme';
 
 const defaultDiagram = `---
 config:
@@ -76,55 +71,67 @@ flowchart LR
   cue --> preview["Seek any moment"]
   trace --> preview`;
 
-const legacyStarterMotion = `motionDiagram-v1
-  defaults duration 480ms easing ease-out
-  marker request as "Request" shape dot
-
-  at 0ms highlight brief
-  at 450ms move request along brief --> render --> cue over 1.6s
-  at 2.25s pulse cue for 550ms
-  at 3.1s move request along render --> trace --> preview over 1.4s`;
-
-const previousStarterMotion = `motionDiagram-v1
-  defaults duration 480ms easing ease-out
-  marker request as "Request" shape dot
-
-  at 0ms highlight brief
-  at 450ms move request along brief --> render --> cue --> preview over 2.4s easing linear
-  at 2.25s pulse cue for 550ms
-  at 3.1s trace render --> trace --> preview over 1.4s easing linear`;
-
-const previousShapedStarterMotion = `motionDiagram-v1
-  defaults duration 480ms easing ease-out color #ff5470
-  marker request as "Request" shape dot
-
-  at 0ms highlight brief
-  at 450ms move request along brief --> render --> cue --> preview over 2.4s easing linear
-  at 2.25s pulse cue for 550ms
-  at 3.1s trace render --> trace --> preview over 1.4s easing linear`;
-
 const defaultMotion = `motionDiagram-v1
   defaults duration 480ms easing ease-out color #ff5470
   marker request as "Request"
 
   at 0ms highlight brief
-  at 450ms move request along brief --> render --> cue --> preview over 2.4s easing linear
+  at 450ms move request along brief --> render --> cue --> preview over 2.4s
   at 2.25s pulse cue for 550ms
-  at 3.1s trace render --> trace --> preview over 1.4s easing linear`;
+  at 3.1s trace render --> trace --> preview over 1.4s`;
+
+const newSceneDiagram = `flowchart LR
+  start["Start"] --> next["Next"]`;
+
+const newSceneMotion = `motionDiagram-v1
+  defaults duration 480ms easing ease-out color #ff5470`;
+
+const defaultSceneWorkspace: SceneWorkspace = {
+  activeSceneId: 'scene-checkout',
+  scenes: [
+    {
+      id: 'scene-checkout',
+      name: 'Checkout',
+      diagramSource: defaultDiagram,
+      motionSource: defaultMotion,
+    },
+  ],
+};
 
 type MobileView = 'source' | 'preview' | 'timeline';
-type SaveState = 'loading' | 'saving' | 'saved' | 'error';
+type SaveState = 'loading' | 'saving' | 'saved' | 'error' | 'conflict';
 
-const defaultMotionColor = '#ff5470' as HexColor;
+const defaultMotionColor: HexColor = '#ff5470';
+const saveStateLabels: Readonly<Record<SaveState, string>> = {
+  conflict: 'Reload to sync',
+  error: 'Save unavailable',
+  loading: 'Opening',
+  saved: 'Saved locally',
+  saving: 'Saving locally',
+};
 
-function downloadSources(diagramSource: string, motionSource: string) {
+function createSceneId(): string {
+  return `scene-${crypto.randomUUID()}`;
+}
+
+function downloadSources(workspace: SceneWorkspace): void {
+  const current = activeScene(workspace);
   const content = JSON.stringify(
     {
-      format: 'mermotion-document-v1',
+      format: 'mermotion-workspace-v2',
+      activeSceneId: workspace.activeSceneId,
       files: {
-        'diagram.mmd': diagramSource,
-        'diagram.motion': motionSource,
+        'diagram.mmd': current.diagramSource,
+        'diagram.motion': current.motionSource,
       },
+      scenes: workspace.scenes.map(({ id, name, diagramSource, motionSource }) => ({
+        id,
+        name,
+        files: {
+          'diagram.mmd': diagramSource,
+          'diagram.motion': motionSource,
+        },
+      })),
     },
     null,
     2,
@@ -132,34 +139,61 @@ function downloadSources(diagramSource: string, motionSource: string) {
   const url = URL.createObjectURL(new Blob([content], { type: 'application/json' }));
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = 'checkout.mermotion.json';
+  anchor.download = 'workspace.mermotion.json';
   anchor.click();
   URL.revokeObjectURL(url);
 }
 
 export function App() {
   const appearanceTrigger = useRef<HTMLButtonElement>(null);
+  const exportTrigger = useRef<HTMLButtonElement>(null);
+  const previewRef = useRef<PreviewHandle>(null);
   const persistedOnce = useRef(false);
+  const persistenceEnabled = useRef(false);
+  const workspaceRevision = useRef<number | null | undefined>(undefined);
+  const skipNextAutosave = useRef(true);
+  const saveAttempt = useRef(0);
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const animationFrame = useRef<number | undefined>(undefined);
   const playbackTime = useRef(0);
-  const [diagramSource, setDiagramSource] = useState(defaultDiagram);
-  const [motionSource, setMotionSource] = useState(defaultMotion);
+  const [sceneWorkspace, setSceneWorkspace] = useState<SceneWorkspace>(defaultSceneWorkspace);
   const [activeFile, setActiveFile] = useState<SourceFile>('motion');
+  const [syntaxOpen, setSyntaxOpen] = useState(false);
   const [mobileView, setMobileView] = useState<MobileView>('preview');
   const [themePreference, setThemePreference] = useState<ThemePreference>('dark');
   const [appearance, setAppearance] = useState<AppearancePreference>(defaultAppearancePreference);
   const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [gifExportInfo, setGifExportInfo] = useState<GifExportInfo>();
   const [saveState, setSaveState] = useState<SaveState>('loading');
+  const [saveError, setSaveError] = useState<string>();
   const [diagnostics, setDiagnostics] = useState<UiDiagnostic[]>([]);
   const [durationMs, setDurationMs] = useState(DEMO_DURATION_MS);
   const [timeMs, setTimeMs] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [selectedCueId, setSelectedCueId] = useState<string>();
   const [commandOpen, setCommandOpen] = useState(false);
+  const [presentationOpen, setPresentationOpen] = useState(false);
   const [renderNonce, setRenderNonce] = useState(0);
   const [fitNonce, setFitNonce] = useState(0);
   const [lastRenderedAt, setLastRenderedAt] = useState<number>();
-  const [hydrated, setHydrated] = useState(false);
+  const [semanticInventory, setSemanticInventory] = useState<{
+    source: string;
+    targets: SemanticTarget[];
+  }>({ source: '', targets: [] });
+  const [persistenceReady, setPersistenceReady] = useState(false);
+  const currentScene = activeScene(sceneWorkspace);
+  const currentSceneIndex = sceneWorkspace.scenes.findIndex(
+    ({ id }) => id === sceneWorkspace.activeSceneId,
+  );
+  const diagramSource = currentScene.diagramSource;
+  const motionSource = currentScene.motionSource;
+  const setDiagramSource = useCallback((update: SetStateAction<string>) => {
+    setSceneWorkspace((workspace) => updateActiveSceneSource(workspace, 'diagramSource', update));
+  }, []);
+  const setMotionSource = useCallback((update: SetStateAction<string>) => {
+    setSceneWorkspace((workspace) => updateActiveSceneSource(workspace, 'motionSource', update));
+  }, []);
 
   const outerLayout = useDefaultLayout({
     id: 'mermotion-rows',
@@ -187,6 +221,18 @@ export function App() {
     [motionSource],
   );
   const shellPalette = useMemo(() => resolveShellPalette(appearance), [appearance]);
+  const semanticTargets =
+    semanticInventory.source === diagramSource ? semanticInventory.targets : [];
+  const currentGifExportInfo =
+    gifExportInfo?.diagramSource === diagramSource && gifExportInfo.motionSource === motionSource
+      ? gifExportInfo
+      : undefined;
+  const canExportGif =
+    currentGifExportInfo !== undefined &&
+    !diagnostics.some((diagnostic) => diagnostic.severity === 'error');
+  const updateSemanticTargets = useCallback((source: string, targets: SemanticTarget[]) => {
+    setSemanticInventory({ source, targets });
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -194,18 +240,10 @@ export function App() {
       .then((workspace) => {
         if (!active) return;
         if (workspace) {
-          setDiagramSource(
-            workspace.diagramSource === legacyStarterDiagram
-              ? defaultDiagram
-              : workspace.diagramSource,
-          );
-          setMotionSource(
-            workspace.motionSource === legacyStarterMotion ||
-              workspace.motionSource === previousStarterMotion ||
-              workspace.motionSource === previousShapedStarterMotion
-              ? defaultMotion
-              : workspace.motionSource,
-          );
+          setSceneWorkspace({
+            activeSceneId: workspace.activeSceneId,
+            scenes: workspace.scenes,
+          });
           if (workspace.appearance) {
             setAppearance(workspace.appearance);
             setThemePreference(workspace.appearance.shellPreset === 'Paper' ? 'light' : 'dark');
@@ -214,13 +252,20 @@ export function App() {
             setThemePreference('dark');
           }
         }
+        workspaceRevision.current = workspace?.revision ?? null;
+        persistenceEnabled.current = true;
+        skipNextAutosave.current = true;
+        setSaveError(undefined);
         setSaveState('saved');
-        setHydrated(true);
+        setPersistenceReady(true);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (!active) return;
+        persistenceEnabled.current = false;
+        workspaceRevision.current = undefined;
+        setSaveError(error instanceof Error ? error.message : 'Local storage could not be opened.');
         setSaveState('error');
-        setHydrated(true);
+        setPersistenceReady(false);
       });
     return () => {
       active = false;
@@ -229,9 +274,8 @@ export function App() {
 
   useEffect(() => {
     const root = document.documentElement;
-    const resolved = themePreference === 'light' ? 'light' : 'dark';
-    root.dataset.theme = resolved;
-    root.style.colorScheme = resolved;
+    root.dataset.theme = themePreference;
+    root.style.colorScheme = themePreference;
     for (const [property, value] of Object.entries(shellPaletteCssVariables(shellPalette))) {
       root.style.setProperty(property, value);
     }
@@ -242,27 +286,108 @@ export function App() {
   }, [motionColor, shellPalette, themePreference]);
 
   useEffect(() => {
-    if (!hydrated) return undefined;
+    if (!persistenceReady || !persistenceEnabled.current) return undefined;
+    if (skipNextAutosave.current) {
+      skipNextAutosave.current = false;
+      return undefined;
+    }
+    const attempt = ++saveAttempt.current;
+    const workspace = { ...sceneWorkspace, appearance, themePreference };
+    setSaveError(undefined);
     setSaveState('saving');
     const timeout = window.setTimeout(() => {
-      void saveWorkspace({ appearance, diagramSource, motionSource, themePreference })
-        .then(() => {
-          setSaveState('saved');
+      saveQueue.current = saveQueue.current
+        .then(async () => {
+          if (!persistenceEnabled.current) return;
+          const expectedRevision = workspaceRevision.current;
+          if (expectedRevision === undefined) {
+            throw new Error('The local workspace has not finished opening.');
+          }
+          const saved = await saveWorkspace(workspace, expectedRevision);
+          workspaceRevision.current = saved.revision;
+          if (attempt === saveAttempt.current) setSaveState('saved');
           if (!persistedOnce.current) {
             persistedOnce.current = true;
             void requestPersistentStorage();
           }
         })
-        .catch(() => setSaveState('error'));
+        .catch((error: unknown) => {
+          persistenceEnabled.current = false;
+          setPersistenceReady(false);
+          setSaveError(
+            error instanceof Error ? error.message : 'Local storage could not save this workspace.',
+          );
+          setSaveState(error instanceof WorkspaceRevisionConflictError ? 'conflict' : 'error');
+        });
     }, 500);
     return () => window.clearTimeout(timeout);
-  }, [appearance, diagramSource, hydrated, motionSource, themePreference]);
+  }, [appearance, persistenceReady, sceneWorkspace, themePreference]);
 
   const restart = useCallback(() => {
     setIsPlaying(false);
     playbackTime.current = 0;
     setTimeMs(0);
   }, []);
+
+  const fitPreview = useCallback(() => {
+    setFitNonce((value) => value + 1);
+    setMobileView('preview');
+  }, []);
+
+  const renderPreview = useCallback(() => setRenderNonce((value) => value + 1), []);
+
+  const openPresentation = useCallback(() => {
+    restart();
+    setPresentationOpen(true);
+  }, [restart]);
+
+  const resetSceneView = useCallback(() => {
+    restart();
+    setDurationMs(DEMO_DURATION_MS);
+    setSelectedCueId(undefined);
+    setDiagnostics([]);
+    setGifExportInfo(undefined);
+    setLastRenderedAt(undefined);
+    setSemanticInventory({ source: '', targets: [] });
+    setFitNonce((value) => value + 1);
+  }, [restart]);
+
+  const activateScene = useCallback(
+    (sceneId: string) => {
+      if (sceneId === sceneWorkspace.activeSceneId) return;
+      setSceneWorkspace((workspace) => selectScene(workspace, sceneId));
+      resetSceneView();
+    },
+    [resetSceneView, sceneWorkspace.activeSceneId],
+  );
+
+  const createScene = useCallback(() => {
+    const id = createSceneId();
+    setSceneWorkspace((workspace) =>
+      addScene(workspace, {
+        id,
+        diagramSource: newSceneDiagram,
+        motionSource: newSceneMotion,
+      }),
+    );
+    resetSceneView();
+  }, [resetSceneView]);
+
+  const copyScene = useCallback(
+    (sceneId: string) => {
+      setSceneWorkspace((workspace) => duplicateScene(workspace, sceneId, createSceneId()));
+      resetSceneView();
+    },
+    [resetSceneView],
+  );
+
+  const removeScene = useCallback(
+    (sceneId: string) => {
+      setSceneWorkspace((workspace) => deleteScene(workspace, sceneId));
+      resetSceneView();
+    },
+    [resetSceneView],
+  );
 
   const togglePlayback = useCallback(() => {
     setIsPlaying((playing) => {
@@ -312,6 +437,7 @@ export function App() {
       const statement = motionStatementForTarget(target, timeMs);
       setMotionSource((source) => `${source.trimEnd()}\n${statement}\n`);
       setActiveFile('motion');
+      setSyntaxOpen(false);
       setMobileView('source');
     },
     [timeMs],
@@ -323,11 +449,30 @@ export function App() {
     setTimeMs(cue.startMs);
     setIsPlaying(false);
     setActiveFile('motion');
+    setSyntaxOpen(false);
   }, []);
 
   const closeAppearance = useCallback(() => {
     setAppearanceOpen(false);
     window.requestAnimationFrame(() => appearanceTrigger.current?.focus());
+  }, []);
+
+  const openAppearance = useCallback(() => {
+    setExportOpen(false);
+    setAppearanceOpen(true);
+  }, []);
+
+  const openExport = useCallback(() => {
+    setAppearanceOpen(false);
+    setExportOpen(true);
+  }, []);
+
+  const closeExport = useCallback(() => setExportOpen(false), []);
+
+  const exportGif = useCallback<GifExporter>((settings, control) => {
+    const preview = previewRef.current;
+    if (!preview) return Promise.reject(new Error('The preview is not ready for export.'));
+    return preview.exportGif(settings, control);
   }, []);
 
   const changeAppearance = useCallback((nextAppearance: AppearancePreference) => {
@@ -355,6 +500,7 @@ export function App() {
 
   const focusFile = useCallback((file: SourceFile) => {
     setActiveFile(file);
+    setSyntaxOpen(false);
     setMobileView('source');
     window.setTimeout(() => {
       document
@@ -365,22 +511,25 @@ export function App() {
     });
   }, []);
 
+  const openSyntax = useCallback(() => {
+    setSyntaxOpen(true);
+    setMobileView('source');
+    window.requestAnimationFrame(() => document.getElementById('motion-syntax-reference')?.focus());
+  }, []);
+
   const actions = useMemo<CommandAction[]>(
     () => [
       {
         group: 'Diagram',
         label: 'Render diagram',
         shortcut: '⌘↵',
-        run: () => setRenderNonce((value) => value + 1),
+        run: renderPreview,
       },
       {
         group: 'Diagram',
         label: 'Fit preview',
         shortcut: 'F',
-        run: () => {
-          setFitNonce((value) => value + 1);
-          setMobileView('preview');
-        },
+        run: fitPreview,
       },
       {
         group: 'Source',
@@ -395,6 +544,13 @@ export function App() {
         run: () => focusFile('motion'),
       },
       {
+        group: 'Source',
+        keywords: ['docs', 'help', 'language', 'reference'],
+        label: 'Open syntax reference',
+        shortcut: '⌘/',
+        run: openSyntax,
+      },
+      {
         group: 'Playback',
         label: isPlaying ? 'Pause animation' : 'Play animation',
         shortcut: 'Space',
@@ -407,17 +563,53 @@ export function App() {
         run: restart,
       },
       {
+        group: 'Scenes',
+        label: 'Add scene',
+        run: createScene,
+      },
+      {
+        group: 'Scenes',
+        label: 'Duplicate current scene',
+        run: () => copyScene(sceneWorkspace.activeSceneId),
+      },
+      {
+        group: 'Scenes',
+        keywords: ['slides', 'present', 'preview'],
+        label: 'Start presentation',
+        run: openPresentation,
+      },
+      {
         group: 'View',
         label: 'Open Appearance',
-        run: () => setAppearanceOpen(true),
+        run: openAppearance,
+      },
+      {
+        group: 'Project',
+        keywords: ['gif', 'download', 'loop', 'animation'],
+        label: 'Open export',
+        run: openExport,
       },
       {
         group: 'Project',
         label: 'Download source bundle',
-        run: () => downloadSources(diagramSource, motionSource),
+        run: () => downloadSources(sceneWorkspace),
       },
     ],
-    [diagramSource, focusFile, isPlaying, motionSource, restart, togglePlayback],
+    [
+      copyScene,
+      createScene,
+      fitPreview,
+      focusFile,
+      isPlaying,
+      openAppearance,
+      openExport,
+      openPresentation,
+      openSyntax,
+      renderPreview,
+      restart,
+      sceneWorkspace,
+      togglePlayback,
+    ],
   );
 
   useEffect(() => {
@@ -429,39 +621,101 @@ export function App() {
         event.target instanceof HTMLButtonElement ||
         event.target instanceof HTMLSelectElement ||
         (event.target instanceof HTMLElement && event.target.isContentEditable);
+      if (presentationOpen) {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          setPresentationOpen(false);
+        } else if (!usingControl && event.key === 'ArrowLeft' && currentSceneIndex > 0) {
+          event.preventDefault();
+          activateScene(sceneWorkspace.scenes[currentSceneIndex - 1]!.id);
+        } else if (
+          !usingControl &&
+          event.key === 'ArrowRight' &&
+          currentSceneIndex < sceneWorkspace.scenes.length - 1
+        ) {
+          event.preventDefault();
+          activateScene(sceneWorkspace.scenes[currentSceneIndex + 1]!.id);
+        } else if (!usingControl && event.code === 'Space') {
+          event.preventDefault();
+          togglePlayback();
+        }
+        return;
+      }
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault();
         setCommandOpen((open) => !open);
       } else if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
         event.preventDefault();
-        setRenderNonce((value) => value + 1);
+        renderPreview();
       } else if ((event.metaKey || event.ctrlKey) && event.key === '1') {
         event.preventDefault();
         focusFile('diagram');
       } else if ((event.metaKey || event.ctrlKey) && event.key === '2') {
         event.preventDefault();
         focusFile('motion');
+      } else if ((event.metaKey || event.ctrlKey) && event.code === 'Slash') {
+        event.preventDefault();
+        openSyntax();
       } else if (!usingControl && event.code === 'Space') {
         event.preventDefault();
         togglePlayback();
       } else if (!usingControl && event.key.toLowerCase() === 'r') {
         restart();
       } else if (!usingControl && event.key.toLowerCase() === 'f') {
-        setFitNonce((value) => value + 1);
-        setMobileView('preview');
+        fitPreview();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [focusFile, restart, togglePlayback]);
+  }, [
+    activateScene,
+    currentSceneIndex,
+    fitPreview,
+    focusFile,
+    openSyntax,
+    presentationOpen,
+    renderPreview,
+    restart,
+    sceneWorkspace.scenes,
+    togglePlayback,
+  ]);
 
-  const onDiagnosticsChange = useCallback((nextDiagnostics: UiDiagnostic[]) => {
-    setDiagnostics(nextDiagnostics);
-  }, []);
   const onDurationChange = useCallback((duration: number) => {
     if (Number.isFinite(duration) && duration > 0) setDurationMs(duration);
   }, []);
   const onRender = useCallback(() => setLastRenderedAt(Date.now()), []);
+
+  if (presentationOpen) {
+    return (
+      <PresentationView
+        isPlaying={isPlaying}
+        onClose={() => {
+          setIsPlaying(false);
+          setPresentationOpen(false);
+        }}
+        onNext={() => activateScene(sceneWorkspace.scenes[currentSceneIndex + 1]!.id)}
+        onPlayToggle={togglePlayback}
+        onPrevious={() => activateScene(sceneWorkspace.scenes[currentSceneIndex - 1]!.id)}
+        onSelect={activateScene}
+        workspace={sceneWorkspace}
+      >
+        <Preview
+          diagramBackground={diagramPalette.background}
+          diagramSource={diagramSource}
+          fitNonce={fitNonce}
+          key={`presentation-${sceneWorkspace.activeSceneId}-${renderNonce}`}
+          motionSource={motionSource}
+          onAddPulse={addPulse}
+          onDiagnosticsChange={setDiagnostics}
+          onDurationChange={onDurationChange}
+          onRender={onRender}
+          onTargetsChange={updateSemanticTargets}
+          readOnly
+          timeMs={timeMs}
+        />
+      </PresentationView>
+    );
+  }
 
   return (
     <div className="app-shell" data-mobile-view={mobileView}>
@@ -479,7 +733,7 @@ export function App() {
           <span className="header-rule" />
           <div className="document-identity">
             <div className="document-line">
-              <strong>checkout</strong>
+              <strong>{currentScene.name}</strong>
               <span>.mmd</span>
               <i className={diagnostics.length ? 'document-dot has-error' : 'document-dot'} />
             </div>
@@ -487,14 +741,8 @@ export function App() {
               <span>{diagnostics.length ? 'Needs attention' : 'Ready'}</span>
               <span>Mermaid {MERMAID_VERSION}</span>
               {lastRenderedAt ? <span data-testid="render-status">Preview current</span> : null}
-              <span data-testid="save-status">
-                {saveState === 'loading'
-                  ? 'Opening'
-                  : saveState === 'saving'
-                    ? 'Saving locally'
-                    : saveState === 'error'
-                      ? 'Save unavailable'
-                      : 'Saved locally'}
+              <span data-testid="save-status" title={saveError}>
+                {saveStateLabels[saveState]}
               </span>
             </div>
           </div>
@@ -514,16 +762,18 @@ export function App() {
           <button
             aria-expanded={appearanceOpen}
             className="header-button appearance-trigger"
-            onClick={() => setAppearanceOpen(true)}
+            onClick={openAppearance}
             ref={appearanceTrigger}
             type="button"
           >
             <Palette aria-hidden="true" size={14} /> Appearance
           </button>
           <button
-            aria-label="Download diagram and motion sources"
+            aria-expanded={exportOpen}
+            aria-label="Open export options"
             className="header-button download-control"
-            onClick={() => downloadSources(diagramSource, motionSource)}
+            onClick={openExport}
+            ref={exportTrigger}
             type="button"
           >
             <Download aria-hidden="true" size={14} /> Export
@@ -553,6 +803,21 @@ export function App() {
           </button>
         </nav>
       </header>
+
+      <SceneRail
+        onAdd={createScene}
+        onDelete={removeScene}
+        onDuplicate={copyScene}
+        onMove={(sceneId, direction) =>
+          setSceneWorkspace((workspace) => moveScene(workspace, sceneId, direction))
+        }
+        onPresent={openPresentation}
+        onRename={(sceneId, name) =>
+          setSceneWorkspace((workspace) => renameScene(workspace, sceneId, name))
+        }
+        onSelect={activateScene}
+        workspace={sceneWorkspace}
+      />
 
       <nav className="mobile-tabs" aria-label="Workspace regions">
         {(['source', 'preview', 'timeline'] as const).map((view) => (
@@ -586,6 +851,9 @@ export function App() {
                   onActiveFileChange={setActiveFile}
                   onDiagramSourceChange={setDiagramSource}
                   onMotionSourceChange={setMotionSource}
+                  onSyntaxOpenChange={setSyntaxOpen}
+                  syntaxOpen={syntaxOpen}
+                  targets={semanticTargets}
                 />
               </Panel>
               <Separator className="resize-handle vertical-handle">
@@ -596,12 +864,15 @@ export function App() {
                   diagramBackground={diagramPalette.background}
                   diagramSource={diagramSource}
                   fitNonce={fitNonce}
-                  key={renderNonce}
+                  key={`${sceneWorkspace.activeSceneId}-${renderNonce}`}
                   motionSource={motionSource}
                   onAddPulse={addPulse}
-                  onDiagnosticsChange={onDiagnosticsChange}
+                  onDiagnosticsChange={setDiagnostics}
                   onDurationChange={onDurationChange}
+                  onGifExportInfoChange={setGifExportInfo}
                   onRender={onRender}
+                  onTargetsChange={updateSemanticTargets}
+                  ref={previewRef}
                   timeMs={timeMs}
                 />
               </Panel>
@@ -641,15 +912,23 @@ export function App() {
           onAppearanceChange={changeAppearance}
           onClose={closeAppearance}
           onDiagramColorChange={changeDiagramColor}
-          onDiagramThemeChange={(theme) => {
-            if (isMermaidTheme(theme)) {
-              setDiagramSource((source) => writeMermaidTheme(source, theme));
-            }
-          }}
+          onDiagramThemeChange={(theme) =>
+            setDiagramSource((source) => writeMermaidTheme(source, theme))
+          }
           onMotionColorChange={(color) =>
             setMotionSource((source) => writeMotionDefaultColor(source, color))
           }
           onReset={resetAppearance}
+        />
+      ) : null}
+      {exportOpen ? (
+        <ExportPanel
+          canExport={canExportGif}
+          exportInfo={currentGifExportInfo}
+          onClose={closeExport}
+          onDownloadSources={() => downloadSources(sceneWorkspace)}
+          onExport={exportGif}
+          returnFocusRef={exportTrigger}
         />
       ) : null}
     </div>

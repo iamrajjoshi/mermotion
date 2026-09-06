@@ -1,4 +1,3 @@
-import './browser-compat';
 import '@fontsource-variable/ibm-plex-sans';
 import '@fontsource-variable/jetbrains-mono';
 import './styles.css';
@@ -8,7 +7,10 @@ import { createRoot } from 'react-dom/client';
 
 import { App } from './App';
 
-createRoot(document.getElementById('root')!).render(
+const root = document.getElementById('root');
+if (!root) throw new Error('The Mermotion root element is missing.');
+
+createRoot(root).render(
   <StrictMode>
     <App />
   </StrictMode>,

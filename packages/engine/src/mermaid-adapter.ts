@@ -1,15 +1,16 @@
 import DOMPurify from 'dompurify';
-import mermaid, { type MermaidConfig } from 'mermaid';
+import mermaid from 'mermaid';
 import { sourceSpan, wholeSourceSpan } from './spans.js';
 import type {
   Diagnostic,
   MermaidInspection,
+  MermaidRenderConfig,
   MermaidRenderOptions,
   RenderedMermaid,
   SourceSpan,
 } from './types.js';
 
-const BASE_CONFIG: MermaidConfig = {
+const BASE_CONFIG: MermaidRenderConfig = {
   startOnLoad: false,
   securityLevel: 'strict',
   deterministicIds: true,
@@ -45,7 +46,7 @@ export class MermaidAdapterError extends Error {
   }
 }
 
-function configFor(options?: MermaidConfig): MermaidConfig {
+function configFor(options?: MermaidRenderConfig): MermaidRenderConfig {
   return {
     ...BASE_CONFIG,
     ...options,
@@ -56,7 +57,7 @@ function configFor(options?: MermaidConfig): MermaidConfig {
   };
 }
 
-function ensureInitialized(config?: MermaidConfig): void {
+function ensureInitialized(config?: MermaidRenderConfig): void {
   const next = configFor(config);
   const serialized = JSON.stringify(next);
   if (initializedConfig && initializedConfig !== serialized) {
@@ -77,21 +78,25 @@ function safeRenderId(id: string | undefined): string {
   return safe || `mermotion-${renderCounter}`;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object';
+}
+
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === 'string') return error;
-  if (error && typeof error === 'object') {
-    const value = error as { message?: unknown; str?: unknown };
-    if (typeof value.message === 'string') return value.message;
-    if (typeof value.str === 'string') return value.str;
+  if (isRecord(error)) {
+    if (typeof error.message === 'string') return error.message;
+    if (typeof error.str === 'string') return error.str;
   }
   return 'Mermaid could not parse this diagram.';
 }
 
 function errorSpan(source: string, error: unknown): SourceSpan {
-  if (!error || typeof error !== 'object') return wholeSourceSpan(source);
-  const hash = (error as { hash?: { loc?: Record<string, unknown> } }).hash;
-  const location = hash?.loc;
+  if (!isRecord(error) || !isRecord(error.hash) || !isRecord(error.hash.loc)) {
+    return wholeSourceSpan(source);
+  }
+  const location = error.hash.loc;
   const firstLine = typeof location?.first_line === 'number' ? location.first_line : undefined;
   const firstColumn = typeof location?.first_column === 'number' ? location.first_column : 0;
   const lastLine = typeof location?.last_line === 'number' ? location.last_line : firstLine;
@@ -165,7 +170,7 @@ export async function registeredMermaidDiagramTypes(): Promise<string[]> {
     .sort();
 }
 
-export function detectMermaidType(source: string, config?: MermaidConfig): string {
+export function detectMermaidType(source: string, config?: MermaidRenderConfig): string {
   ensureInitialized(config);
   return mermaid.detectType(source, config);
 }

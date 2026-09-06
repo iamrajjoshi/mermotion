@@ -1,0 +1,7 @@
+motionDiagram-v1
+  defaults duration 400ms easing ease-out color #ff5470
+
+  at 0ms highlight participant worker
+  with pulse participant api
+  with pulse message worker->>api: "GET /status" occurrence 2
+  with pulse message api-->>worker: "200 OK"

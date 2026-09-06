@@ -64,7 +64,7 @@ export type SemanticTargetKind = 'diagram' | 'node' | 'edge' | 'participant' | '
 
 export type MotionSelector =
   | { kind: 'id'; id: string; targetKind?: Exclude<SemanticTargetKind, 'diagram' | 'message'> }
-  | { kind: 'message'; from: string; to: string; arrow: string; text: string; occurrence: number }
+  | { kind: 'message'; from: string; to: string; arrow: string; text: string; occurrence?: number }
   | { kind: 'allMessages' }
   | { kind: 'route'; nodes: string[] }
   | { kind: 'edges'; ids: string[] }
@@ -221,6 +221,7 @@ export interface FrameTargetState {
   key: string;
   visible: boolean;
   opacity: number;
+  opacityControlled?: boolean;
   highlight: number;
   pulse: number;
   color?: string;
@@ -228,6 +229,7 @@ export interface FrameTargetState {
 
 export interface FrameMarkerState {
   id: string;
+  incarnation: number;
   label: string;
   shape: 'dot';
   route: string[];
@@ -238,6 +240,7 @@ export interface FrameMarkerState {
   phase: 'moving' | 'arriving' | 'settled';
   arrivalProgress: number;
   color?: string;
+  colorSourceKey?: string;
   from?: string;
   to?: string;
 }
@@ -261,10 +264,12 @@ export interface ApplyFrameOptions {
   reducedMotion?: boolean;
 }
 
+export type MermaidRenderConfig = MermaidConfig;
+
 export interface MermaidRenderOptions {
   source: string;
   id?: string;
-  config?: MermaidConfig;
+  config?: MermaidRenderConfig;
 }
 
 export interface RenderedMermaid {
