@@ -1,6 +1,6 @@
 # Mermotion system
 
-**State described:** implemented local v1 through M4.
+**State described:** public version 0.1.0.
 
 Mermotion has three workspaces. `apps/web` owns the editor and browser persistence. `packages/engine` owns the document model, motion language, Mermaid adapter, compiler, deterministic sampler, and browser player. `packages/cli` exposes non-interactive file operations and structured output. There is no internal HTTP API.
 

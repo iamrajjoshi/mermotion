@@ -9,7 +9,7 @@ browser: drafts stay in IndexedDB, and rendering and export happen on your devic
 
 ![Mermotion workbench with source, animated Mermaid preview, and timeline](docs/assets/mermotion-workbench.png)
 
-## Canonical M1 profile
+## Motion language
 
 ```text
 checkout.mmd       standard Mermaid: structure, layout, frontmatter, theme
@@ -29,8 +29,8 @@ motionDiagram-v1
 
 Keep one `defaults` line and use bare Mermaid IDs. Unprefixed cues run in sequence; `with` overlaps
 the preceding cue, while `at 2.4s` pins a cue to an exact time. Effects take `for`, paths take `over`,
-and colors use six hexadecimal digits. A marker is a dot in M1, so its declaration does not need a
-shape clause.
+and colors use six hexadecimal digits. A marker is a dot, so its declaration does not need a shape
+clause.
 
 Website authoring controls and agents write this profile. They never emit Mermaid-generated SVG IDs,
 YAML, JSON, CSS selectors, keyframes, or keywords that are not part of the motion language. The
@@ -40,16 +40,16 @@ file.
 Named markers follow Mermaid's measured edge geometry, pass continuously through intermediate
 nodes, and keep their identity after arrival. See
 [`docs/design/motion-behavior.md`](docs/design/motion-behavior.md) for the motion rules and proof
-thresholds. [`docs/motion-language.md`](docs/motion-language.md) separates canonical M1 source from
-the wider parser compatibility surface.
+thresholds. [`docs/motion-language.md`](docs/motion-language.md) separates the syntax written by the
+editor and agent skill from the wider parser compatibility surface.
 
 ## Current status
 
-The local v1 is implemented. A checked-in browser matrix renders all 30 user-facing diagram
-families and 33 syntaxes exposed by Mermaid 11.17.2. Flowcharts and sequence diagrams also have
-stable subtarget bindings, so their motion survives label, source-order, layout, and theme edits.
-Other diagram families can use whole-diagram motion; they need family-specific identity rules before
-Mermotion will claim stable node or connection targeting for them.
+Mermotion 0.1.0 includes a checked-in browser matrix for all 30 user-facing diagram families and 33
+syntaxes exposed by Mermaid 11.17.2. Flowcharts and sequence diagrams also have stable subtarget
+bindings, so their motion survives label, source-order, layout, and theme edits. Other diagram
+families can use whole-diagram motion; they need family-specific identity rules before Mermotion will
+claim stable node or connection targeting for them.
 
 The editor samples `motionDiagram-v1` deterministically, stores its workspace in browser IndexedDB,
 and keeps Mermaid theme data inside `.mmd`. Its Source pane includes a searchable syntax reference

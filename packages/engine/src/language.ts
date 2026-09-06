@@ -572,7 +572,7 @@ function parseStatement(
         diagnostics.push(
           diagnostic(
             'motion.invalid-marker-shape',
-            "M1 supports only the 'dot' marker shape.",
+            "Mermotion supports only the 'dot' marker shape.",
             statementSpan,
           ),
         );

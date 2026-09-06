@@ -1,6 +1,6 @@
 # Mermotion visual direction
 
-**State:** implemented local v1 through scenes and animated export
+**State:** version 0.1.0, including scenes and animated export
 **Audience:** developers and technical writers authoring Mermaid diagrams
 **Primary job:** make source, semantic targets, and time inspectable in one view
 
@@ -8,7 +8,7 @@
 
 Mermotion opens directly into the editor. Source occupies the left side, the Mermaid canvas gets the larger right side, and the timeline spans both below. The canvas and timeline carry the product's identity; the surrounding controls stay compact.
 
-The canonical authoring reference shows the small M1 profile rather than every syntax form the
+The authoring reference shows the small form written by the editor rather than every syntax form the
 parser accepts:
 
 ```motion
@@ -76,8 +76,8 @@ IBM Plex Sans Variable handles application text. JetBrains Mono Variable is rese
 
 - Source tabs use the filenames `diagram.mmd` and `diagram.motion`; they aren't rounded pills.
 - Syntax is a distinct, non-persisted Source view rather than a third file. It is a searchable,
-  ruled reference for canonical M1 syntax, with Copy on every example and Insert only on complete
-  motion statements adapted to semantic IDs in the current preview.
+  ruled reference for the documented motion syntax, with Copy on every example and Insert only on
+  complete motion statements adapted to semantic IDs in the current preview.
 - Hover outlines a Mermaid target. Click pins it and places `Animate`, `Copy target`, and `Inspect` beside the selection.
 - The timeline uses State, Route, and Signal lanes to separate target changes, marker travel, and
   short signals.
@@ -87,8 +87,8 @@ IBM Plex Sans Variable handles application text. JetBrains Mono Variable is rese
 - Cue text stays one plain inline phrase, such as `highlight brief`. The effect keyword is not a badge, pill, separate label, or accent block.
 - Hover, selection, and keyboard focus adjust the existing wash and perimeter. They never add a nested selection outline around the clip.
 - Selecting a cue seeks to its timestamp and opens motion source. The DSL stays authoritative;
-  direct cue dragging and timing fields remain outside v1. Scenes sequence complete source pairs
-  instead of rewriting cue timing.
+  direct cue dragging and timing fields remain outside the current editor. Scenes sequence complete
+  source pairs instead of rewriting cue timing.
 - `Cmd/Ctrl+K` opens commands for rendering, validation, fit, source focus, the Syntax reference,
   cue insertion, and playback. `Cmd/Ctrl+/` opens Syntax directly.
 - Interface transitions normally finish within 180ms. Pane resizing doesn't animate, and the shell has no page-load cascade, parallax, glass, confetti, glow field, or 3D tilt.
@@ -120,10 +120,10 @@ uploaded.
 The panel traps focus, closes on Escape, returns focus to the Export control, and fits the mobile
 viewport without horizontal scrolling.
 
-Website authoring controls and agents write only canonical M1 source. They use stable Mermaid IDs
-and endpoint routes, never Mermaid-generated SVG IDs. They do not emit YAML, JSON, CSS selectors,
-keyframes, or new keywords into `diagram.motion`; richer parser forms stay an input-compatibility
-surface.
+Website authoring controls and agents write only the documented motion syntax. They use stable
+Mermaid IDs and endpoint routes, never Mermaid-generated SVG IDs. They do not emit YAML, JSON, CSS
+selectors, keyframes, or new keywords into `diagram.motion`; richer parser forms stay an
+input-compatibility surface.
 
 **Reset all colors** restores Graphite, the starter Mermaid palette, and the raspberry motion
 default. It does not remove diagram statements, motion cues, markers, or compatibility-only cue
@@ -142,7 +142,7 @@ introduce a third story language, hidden transitions, or global animation settin
 
 Presentation mode removes the source, timeline, and editing controls. It keeps the same preview
 renderer and offers Exit, previous, play or pause, next, and a bottom scene strip. Scene changes are
-manual in v1; there is no automatic cross-scene transition or playback cascade.
+manual; there is no automatic cross-scene transition or playback cascade.
 
 ## Reference decisions
 

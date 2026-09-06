@@ -1,10 +1,8 @@
 # Project state
 
 - Profile: standard
-- Stage: public v0.1.0 implemented through M4
-- Completed milestones: M0, reproducible project; M1, animate one diagram; M2, stable semantic
-  coverage; M3, animated export and Notion-oriented output; M4, scenes
-- Next milestone: none required for v0.1.0
+- Stage: public v0.1.0
+- Release status: shipped
 - Approved brief: `docs/project.md`
 - Current-system view: `docs/architecture/system.md`
 - License: MIT
@@ -23,7 +21,7 @@
   layout needed for authoritative target binding and sampled SVG/PNG output. Playwright remains an
   implementation dependency, although contributors install its Chromium binary during setup.
 
-## M1 result
+## Motion and rendering
 
 ### Motion
 
@@ -54,14 +52,14 @@
 ### Website authoring
 
 - Source includes `diagram.mmd`, `diagram.motion`, and a non-persisted Syntax reference view. The
-  reference searches only canonical M1 forms, copies examples, and inserts complete statements at a
-  safe motion-source line boundary. Insertions adapt to semantic IDs from the current preview and do
-  not modify Mermaid. Move insertion declares a fresh marker, and stale or failed previews expose no
-  insertion targets.
+  reference searches the documented authoring syntax, copies examples, and inserts complete
+  statements at a safe motion-source line boundary. Insertions adapt to semantic IDs from the
+  current preview and do not modify Mermaid. Move insertion declares a fresh marker, and stale or
+  failed previews expose no insertion targets.
 - The three source views use tab and tabpanel semantics with arrow, Home, and End navigation.
   `Cmd/Ctrl+/` and the command palette open Syntax, including from the mobile Source region.
 
-## M2 result
+## Semantic targeting
 
 - Semantic bindings for flowchart and sequence diagrams survive changes to labels, declaration
   order, layout, and theme. Missing, renamed, duplicate, and ambiguous targets fail instead of
@@ -74,7 +72,7 @@
 - Dependabot checks the pinned Mermaid release weekly. An upgrade is accepted only after the engine,
   semantic stability, render compatibility, and product browser suites pass.
 
-## M3 result
+## Animated export
 
 - The website Export panel produces `checkout.gif` from the current valid Mermaid and motion pair.
   It offers width presets of 640, 960, and 1280 pixels at 10, 20, or 25 fps.
@@ -94,7 +92,7 @@
   isolated Chromium page, with explicit `--loop` and `--hold` playback controls and machine-readable
   frame, dimension, duration, and playback metadata.
 
-## M4 result
+## Scenes
 
 - The website holds an ordered scene workspace. Add, rename, duplicate, delete, reorder, and switch
   operate on independent Mermaid and motion source pairs.
@@ -146,20 +144,20 @@
 - Warm-frame browser assertions seek twice after setup and reject bounding-box reads, computed-style
   reads, child-list rebuilding, or more than two screen-transform reads.
 
-## Deliberate limits after local v1
+## Deliberate limits in 0.1.0
 
 - Semantic subtarget adapters remain limited to flowchart and sequence diagrams; all covered Mermaid
   families can still animate as a whole diagram.
 - Repeated parallel flowchart connections remain ambiguous for endpoint-only route selectors. A
   future syntax decision must identify one without exposing Mermaid-generated SVG IDs.
-- GIF is the local animated format in v1. Video can be considered after a browser and codec support
+- GIF is the animated format in 0.1.0. Video can be considered after a browser and codec support
   contract is chosen.
 
 The user authorized the public repository, release commit, site deployment, and package publishing.
 
 ## Readiness scan note
 
-The required pre-code `@kodus/agent-readiness@0.1.3` baseline and M1-U1 reassessment are historical
-structural snapshots. That scanner did not recognize the selected Oxc tools and missed several
-present configurations. See `.ai/project/agent-readiness.md` for the recorded results and current
-interpretation.
+The required pre-code `@kodus/agent-readiness@0.1.3` baseline and first post-bootstrap reassessment
+are historical structural snapshots. That scanner did not recognize the selected Oxc tools and
+missed several present configurations. See `.ai/project/agent-readiness.md` for the recorded results
+and current interpretation.

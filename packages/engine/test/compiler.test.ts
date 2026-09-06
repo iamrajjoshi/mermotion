@@ -653,7 +653,7 @@ describe('motion compilation and sampling', () => {
     ]);
   });
 
-  it('supports the complete M1 effect vocabulary', () => {
+  it('supports the complete effect vocabulary', () => {
     const source = `motionDiagram-v1
   defaults duration 100ms easing linear
   reveal messages every 200ms

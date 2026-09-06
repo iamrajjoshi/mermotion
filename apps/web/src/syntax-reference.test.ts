@@ -43,7 +43,7 @@ describe('motion syntax reference', () => {
     },
   );
 
-  it('only teaches canonical milestone-one forms', () => {
+  it('only teaches the documented authoring syntax', () => {
     const sources = [CANONICAL_MOTION_EXAMPLE, ...SYNTAX_ENTRIES.map(({ source }) => source)];
 
     for (const source of sources) {

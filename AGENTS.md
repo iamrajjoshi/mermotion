@@ -4,7 +4,7 @@ Mermotion is a local-first editor and engine for adding deterministic motion to 
 
 ## Read first
 
-- Product scope and milestones: `docs/project.md`
+- Product scope and roadmap: `docs/project.md`
 - Current architecture: `docs/architecture/system.md`
 - Visual contract: `docs/design/visual-direction.md`
 - Active work and proof: `.ai/project/state.md`
@@ -49,7 +49,7 @@ Keep document, language, adapter, compiler, and player boundaries as internal mo
 
 ## Motion source that agents should write
 
-Keep generated `.motion` files inside the small M1 authoring profile:
+Keep generated `.motion` files inside the documented authoring syntax:
 
 - Start with `motionDiagram-v1`, followed by at most one `defaults` line.
 - Prefer bare Mermaid IDs: `highlight api`, not `highlight node api`.

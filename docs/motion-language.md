@@ -10,7 +10,7 @@ checkout.motion
 The `.mmd` file owns diagram type, structure, IDs, labels, layout, frontmatter, and theme. The
 `.motion` file owns timing and animation. Mermotion never inserts private syntax into Mermaid.
 
-## Canonical M1 profile
+## Authoring syntax
 
 ```motion
 motionDiagram-v1
@@ -26,7 +26,7 @@ motionDiagram-v1
 The first non-comment line is the version header. Canonical source has one `defaults` line,
 statements on separate lines, two-space indentation, and six-digit hexadecimal colors. Mermaid IDs
 stay bare when they are unambiguous; IDs that contain spaces or collide with syntax words are quoted.
-The marker declaration above creates a dot; M1 has no other marker shape.
+The marker declaration above creates a dot; Mermotion supports no other marker shape.
 
 Unprefixed cues start after earlier cues finish. `with` starts a cue alongside the preceding one.
 Use `at 2.4s` only when a cue needs an exact timeline position. Durations accept `ms` or `s`: use
@@ -39,7 +39,7 @@ transition.
 
 ## Effects and targets
 
-The canonical M1 verbs are `highlight`, `pulse`, `trace`, and `move`.
+The editor and agent skill use four verbs: `highlight`, `pulse`, `trace`, and `move`.
 
 ```motion
 motionDiagram-v1
@@ -103,11 +103,11 @@ palette, so changing the Play button does not change exported source.
 
 ## Generated source
 
-Website authoring controls and agents emit only the canonical M1 profile. They derive targets from
-Mermaid source and the semantic target inventory; they never copy Mermaid-generated SVG IDs into a
-sidecar. They also never emit YAML, JSON, CSS selectors, keyframes, or invented keywords. A generated
-cue stays readable as motion source, quotes an ID only when the parser requires it, and leaves the
-`.mmd` file unchanged.
+Website authoring controls and agents emit only the motion syntax documented above. They derive
+targets from Mermaid source and the semantic target inventory; they never copy Mermaid-generated
+SVG IDs into a sidecar. They also never emit YAML, JSON, CSS selectors, keyframes, or invented
+keywords. A generated cue stays readable as motion source, quotes an ID only when the parser
+requires it, and leaves the `.mmd` file unchanged.
 
 ## Compatibility and advanced forms
 
@@ -117,9 +117,9 @@ includes cue labels paired with `after`, `wait`, visibility and story verbs (`un
 easing or color, `color inherit`, semicolons, alternate Mermaid arrows, short or alpha-bearing
 hexadecimal colors, and legacy explicit marker-shape clauses.
 
-These forms are compatibility or advanced syntax, not canonical M1 output. Do not put them in
-canonical examples, website insertions, or agent-authored source. The repeated-message selector
-described above is the exception: its full form is required when sequence messages repeat.
+Mermotion accepts these forms for compatibility or hand-written input, but the editor and agent skill
+do not generate them. The repeated-message selector described above is the exception: its full form
+is required when sequence messages repeat.
 
 ## CLI
 

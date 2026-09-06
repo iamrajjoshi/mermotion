@@ -7,10 +7,10 @@
 - AI/network behavior: `--ai` was not used; no project content was sent to an LLM endpoint
 - Result: Level 1, with zero passing non-skipped checks because the target was intentionally empty
 - Decision: not ready before bootstrap, as expected
-- M1-U1 reassessment: the same command was rerun after M1-U1. It remained Level 1, now at 7 of
-  8 recognized checks toward Level 2. The scanner recognized the lockfile, runtime pin,
-  dev command, unit and browser tests, README, contributing guide, EditorConfig, CI build
-  and test steps, fresh lockfile, and Dependabot.
+- Post-bootstrap reassessment: the same command remained at Level 1, with 7 of 8 recognized checks
+  toward Level 2. The scanner recognized the lockfile, runtime pin, dev command, unit and browser
+  tests, README, contributing guide, EditorConfig, CI build and test steps, fresh lockfile, and
+  Dependabot.
 
 ## Scanner limits
 
@@ -26,7 +26,7 @@ The report is a structural inventory, not proof that an agent can change the pro
 
 ## Current interpretation
 
-The scan is a historical inventory, not a current test report. Mermotion now has an MIT license, 206
+The scan is a historical inventory, not a current test report. Mermotion now has an MIT license, 213
 passing Vitest tests, and 71 Playwright scenarios run in Chromium and Firefox for 142 browser-test
 executions. The exact current commands and results live in `.ai/project/state.md`.
 
