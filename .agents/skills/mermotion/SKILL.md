@@ -18,8 +18,9 @@ Use Mermotion when a user wants an ordinary Mermaid diagram with optional declar
 
 ## CLI workflow
 
-Use an installed `mermotion` command. If it is unavailable, use `pnpm dlx mermotion@0.1.0` in its
-place. Do not assume the Mermotion source repository is present.
+Use an installed `mermotion` command. If it is unavailable, use
+`pnpm dlx @iamrajjoshi/mermotion@0.1.0` in its place. Do not assume the Mermotion source repository
+is present.
 
 1. Validate the pair with `mermotion validate path/to/diagram.mmd`.
 2. Validate and check canonical formatting with

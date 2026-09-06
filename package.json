@@ -1,5 +1,5 @@
 {
-  "name": "mermotion",
+  "name": "@iamrajjoshi/mermotion",
   "version": "0.1.0",
   "description": "Animate Mermaid diagrams with a declarative motion sidecar.",
   "keywords": [
@@ -8,7 +8,7 @@
     "diagram",
     "mermaid"
   ],
-  "homepage": "https://github.com/iamrajjoshi/mermotion#readme",
+  "homepage": "https://rajjoshi.me/mermotion/",
   "bugs": {
     "url": "https://github.com/iamrajjoshi/mermotion/issues"
   },

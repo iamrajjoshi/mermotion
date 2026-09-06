@@ -130,7 +130,7 @@ mermotion render checkout.mmd --at 1.25s -o checkout-frame.svg
 ```
 
 Use `pnpm exec mermotion` when Mermotion is a project dependency, or
-`pnpm dlx mermotion@0.1.0` for a one-off command. Inside the Mermotion source checkout,
+`pnpm dlx @iamrajjoshi/mermotion@0.1.0` for a one-off command. Inside the Mermotion source checkout,
 `pnpm mermotion` rebuilds the engine and CLI before running. After `pnpm build`, contributors can
 invoke the built entry point directly when stdout must contain one JSON envelope:
 

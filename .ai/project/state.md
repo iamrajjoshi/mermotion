@@ -1,14 +1,16 @@
 # Project state
 
 - Profile: standard
-- Stage: local v1 implemented through M4
+- Stage: public v0.1.0 implemented through M4
 - Completed milestones: M0, reproducible project; M1, animate one diagram; M2, stable semantic
   coverage; M3, animated export and Notion-oriented output; M4, scenes
-- Next milestone: none required for local v1
+- Next milestone: none required for v0.1.0
 - Approved brief: `docs/project.md`
 - Current-system view: `docs/architecture/system.md`
 - License: MIT
-- Open decisions: none blocking local v1
+- Live editor: `https://rajjoshi.me/mermotion/`
+- Public repository: `https://github.com/iamrajjoshi/mermotion`
+- Open decisions: none blocking v0.1.0
 
 ## Settled scope
 
@@ -108,9 +110,9 @@
 ## Public repository preparation
 
 - `LICENSE` contains the MIT text and every workspace manifest declares MIT.
-- Repository, bug, and homepage metadata point to `iamrajjoshi/mermotion`. The root
-  `mermotion@0.1.0` package bundles the CLI and portable skill; internal workspace packages remain
-  private.
+- Repository and bug metadata point to `iamrajjoshi/mermotion`; homepage metadata points to the live
+  editor. The root `@iamrajjoshi/mermotion@0.1.0` package bundles the CLI and portable skill;
+  internal workspace packages remain private.
 - CI actions are commit-pinned. Dependabot covers npm and GitHub Actions, and the browser job runs the
   CLI renderer before the full product suite.
 - Browser concurrency is capped at two because parallel Mermaid startup made Firefox and IndexedDB
@@ -126,8 +128,8 @@
 - `CI=1 pnpm test:e2e`: 142 product tests passed across Chromium and Firefox with two workers. The
   run covered 30 Mermaid families, semantic stability, scenes, presentation, local persistence,
   browser isolation, motion paint, responsive UI, and GIF bytes plus playback metadata.
-- `pnpm test:package`: a packed `mermotion@0.1.0` tarball installed outside the checkout, validated
-  source, and rendered an animated SVG with no dependency on the private engine workspace.
+- `pnpm test:package`: a packed `@iamrajjoshi/mermotion@0.1.0` tarball installed outside the checkout,
+  validated source, and rendered an animated SVG with no dependency on the private engine workspace.
 - `pnpm audit --audit-level high`: no known vulnerabilities. The portable skill passed the
   `skill-creator` validator, `git diff --check` passed, and the desktop workbench, active motion,
   presentation, and export panel were inspected from a production build.
@@ -153,7 +155,7 @@
 - GIF is the local animated format in v1. Video can be considered after a browser and codec support
   contract is chosen.
 
-Changing repository visibility, committing, pushing, or publishing requires explicit authorization.
+The user authorized the public repository, release commit, site deployment, and package publishing.
 
 ## Readiness scan note
 

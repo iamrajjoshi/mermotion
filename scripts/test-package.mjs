@@ -10,10 +10,13 @@ const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 const sourceManifest = JSON.parse(
   await readFile(path.join(repositoryRoot, 'package.json'), 'utf8'),
 );
+const sourceName = sourceManifest.name;
 const sourceVersion = sourceManifest.version;
+if (typeof sourceName !== 'string') throw new Error('Mermotion package name is missing.');
 if (typeof sourceVersion !== 'string') throw new Error('Mermotion package version is missing.');
 const temporaryRoot = await mkdtemp(path.join(tmpdir(), 'mermotion-package-'));
-const tarballPath = path.join(temporaryRoot, `mermotion-${sourceVersion}.tgz`);
+const tarballName = `${sourceName.replace(/^@/, '').replaceAll('/', '-')}-${sourceVersion}.tgz`;
+const tarballPath = path.join(temporaryRoot, tarballName);
 const projectRoot = path.join(temporaryRoot, 'consumer');
 
 async function run(command, arguments_, cwd) {
@@ -37,7 +40,9 @@ try {
   );
   await run('pnpm', ['add', '--ignore-scripts', tarballPath], projectRoot);
 
-  const installedRoot = await realpath(path.join(projectRoot, 'node_modules', 'mermotion'));
+  const installedRoot = await realpath(
+    path.join(projectRoot, 'node_modules', ...sourceName.split('/')),
+  );
   assert(
     !installedRoot.startsWith(`${repositoryRoot}${path.sep}`),
     'Packed Mermotion resolved back to the source checkout.',
@@ -55,7 +60,7 @@ try {
   await Promise.all(requiredFiles.map((file) => access(path.join(installedRoot, file))));
 
   const manifest = JSON.parse(await readFile(path.join(installedRoot, 'package.json'), 'utf8'));
-  assert(manifest.name === 'mermotion', 'Packed package has the wrong name.');
+  assert(manifest.name === sourceName, 'Packed package has the wrong name.');
   assert(manifest.version === sourceVersion, 'Packed package has the wrong version.');
   assert(
     manifest.dependencies?.['@mermotion/engine'] === undefined,

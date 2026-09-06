@@ -4,6 +4,9 @@ Mermotion pairs an ordinary Mermaid diagram with an optional `.motion` sidecar. 
 diagram; the sidecar says what moves and when. The web editor opens both as one document, previews
 the result, and stores drafts locally.
 
+Try the editor at [rajjoshi.me/mermotion](https://rajjoshi.me/mermotion/). It runs entirely in the
+browser: drafts stay in IndexedDB, and rendering and export happen on your device.
+
 ![Mermotion workbench with source, animated Mermaid preview, and timeline](docs/assets/mermotion-workbench.png)
 
 ## Canonical M1 profile
@@ -68,13 +71,13 @@ skill.
 Mermotion requires Node.js 24.20.0 or newer. Run a command without changing the current project:
 
 ```sh
-pnpm dlx mermotion@0.1.0 validate checkout.mmd
+pnpm dlx @iamrajjoshi/mermotion@0.1.0 validate checkout.mmd
 ```
 
 For repeated use in a project, install the CLI and prepare its managed Chromium renderer once:
 
 ```sh
-pnpm add --save-dev mermotion
+pnpm add --save-dev @iamrajjoshi/mermotion
 pnpm exec mermotion setup
 pnpm exec mermotion render checkout.mmd -o checkout.gif
 ```
