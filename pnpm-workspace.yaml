@@ -16,7 +16,7 @@ catalog:
   dompurify: 3.4.14
   gifenc: 1.0.3
   idb: 8.0.3
-  lucide-react: 1.37.0
+  lucide-react: 1.41.0
   mermaid: 11.17.2
   oxfmt: 0.66.0
   oxlint: 1.81.0
