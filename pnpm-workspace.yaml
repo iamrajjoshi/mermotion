@@ -23,7 +23,7 @@ catalog:
   oxlint-tsgolint: 7.0.2001
   react: 19.2.8
   react-dom: 19.2.8
-  react-resizable-panels: 4.12.3
+  react-resizable-panels: 4.12.4
   typescript: 7.0.2
   vite: 8.2.2
   vitest: 5.0.0
