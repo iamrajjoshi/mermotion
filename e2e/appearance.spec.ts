@@ -71,14 +71,15 @@ function colorChannels(color: string): [number, number, number] {
   return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])];
 }
 
+function luminance(color: string): number {
+  const [red, green, blue] = colorChannels(color).map((channel) => {
+    const value = channel / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return red * 0.2126 + green * 0.7152 + blue * 0.0722;
+}
+
 function contrastRatio(foreground: string, background: string): number {
-  const luminance = (color: string) => {
-    const [red, green, blue] = colorChannels(color).map((channel) => {
-      const value = channel / 255;
-      return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-    });
-    return red * 0.2126 + green * 0.7152 + blue * 0.0722;
-  };
   const lighter = Math.max(luminance(foreground), luminance(background));
   const darker = Math.min(luminance(foreground), luminance(background));
   return (lighter + 0.05) / (darker + 0.05);
