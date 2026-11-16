@@ -18,9 +18,9 @@ catalog:
   idb: 8.0.4
   lucide-react: 1.45.0
   mermaid: 11.17.2
-  oxfmt: 0.68.0
-  oxlint: 1.83.0
-  oxlint-tsgolint: 7.0.2002
+  oxfmt: 0.78.0
+  oxlint: 1.93.0
+  oxlint-tsgolint: 7.0.2007
   react: 19.3.1
   react-dom: 19.3.1
   react-resizable-panels: 4.12.4
