@@ -31,8 +31,8 @@ catalogs:
       specifier: 1.1.1
       version: 1.1.1
     commander:
-      specifier: 15.0.0
-      version: 15.0.0
+      specifier: 15.1.0
+      version: 15.1.0
     dompurify:
       specifier: 3.4.15
       version: 3.4.15
@@ -85,7 +85,7 @@ importers:
     dependencies:
       commander:
         specifier: 'catalog:'
-        version: 15.0.0
+        version: 15.1.0
       dompurify:
         specifier: 'catalog:'
         version: 3.4.15
@@ -174,7 +174,7 @@ importers:
         version: link:../engine
       commander:
         specifier: 'catalog:'
-        version: 15.0.0
+        version: 15.1.0
       gifenc:
         specifier: 'catalog:'
         version: 1.0.3
@@ -1104,8 +1104,8 @@ packages:
       react: ^18 || ^19 || ^19.0.0-rc
       react-dom: ^18 || ^19 || ^19.0.0-rc
 
-  commander@15.0.0:
-    resolution: {integrity: sha512-z67u4ZhzCL/Tydu1lJARtEZYWbWaN7oYLHbsuzocr6y4N6WZAagG3RQ4FW61V1/0+jImpj293XfrcYnd1qxtPg==}
+  commander@15.1.0:
+    resolution: {integrity: sha512-cgnQ88TRrWcC7pVq46RzJVRMktu3W2RcbnoidnfBsl1bmDCBwJS/udcIZpKoCrbAYYaCqsz1yZCVIgbIaU3ddQ==}
     engines: {node: '>=22.12.0'}
 
   commander@7.2.0:
@@ -2394,7 +2394,7 @@ snapshots:
       - '@types/react'
       - '@types/react-dom'
 
-  commander@15.0.0: {}
+  commander@15.1.0: {}
 
   commander@7.2.0: {}
 
